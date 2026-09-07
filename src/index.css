@@ -1,0 +1,50 @@
+@import "tailwindcss";
+
+
+/* 📜 1. IMPORTAMOS GOOGLE SANS DESDE EL CDN */
+@import url('https://fonts.cdnfonts.com/css/google-sans');
+@theme {
+  /* Rojo profundo de tus imágenes */
+  --color-luxury-red: #D3002D;
+  --color-luxury-red-light: #FF1F4B;
+  --color-luxury-red-dark: #8B0000;
+  
+  --color-luxury-dark: #050505;
+  --color-luxury-card: #0F0F12;
+  --color-luxury-border: #1E1E24;
+  --color-luxury-gold: #B8860B;
+
+  --color-luxury-amber: #f59e0b;
+  --color-luxury-cyan: #06b6d4;
+  --color-luxury-gray: #71717a;
+  --color-luxury-muted: #9ca3af;
+  --color-luxury-purple: #8b5cf6;
+  --color-luxury-pink: #ec4899;
+  --color-luxury-green: #10b981;
+
+    /* 🎯 2. ASIGNAMOS GOOGLE SANS COMO LA FUENTE SANS POR DEFECTO */
+  --font-sans: "Google Sans", ui-sans-serif, system-ui, sans-serif;
+
+  /* ⚡ 3. AJUSTE DE ESCALA (TYPESCALE) ANTI-OJO-ESTIRADO */
+  /* Incrementamos los rems base para que el texto respire y se vea imponente */
+  --text-xxs: 0.68rem;   /* 11px */
+  --text-xs: 0.85rem;    /* ~13.6px  (Antes: 12px) ¡Ya no es una hormiga! */
+  --text-sm: 0.95rem;    /* ~15.2px  (Antes: 14px) Ideal para inputs y tablas */
+  --text-base: 1.05rem;  /* ~16.8px  (Antes: 16px) Lectura limpia corporativa */
+  --text-lg: 1.25rem;    /* ~20px    Para subtítulos y nombres de tarjetas */
+  --text-xl: 1.5rem;     /* ~24px    Títulos de modales */
+  --text-2xl: 1.95rem;   /* ~31.2px  Títulos de secciones */
+  --text-3xl: 2.5rem;    /* ~40px    El "TEAM TOLKO" y cabeceras maestras */
+  --text-4xl: 3.2rem;    /* ~51.2px  Para números macro o estadísticas */
+}
+
+/* 🔥 LA REGLA MAESTRA PARA EL MODO OSCURO EN V4 */
+@custom-variant dark (&:where(.dark, .dark *));
+
+
+/* 🎨 OPTIMIZACIÓN EXTRA DE RENDERIZADO */
+body {
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
