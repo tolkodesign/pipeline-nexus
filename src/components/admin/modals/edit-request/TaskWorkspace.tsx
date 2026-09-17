@@ -198,48 +198,71 @@ export default function TaskWorkspace({
     return userObj?.full_name?.split(' ')[0] || 'Otro colab.';
   };
 
+  // 🔥 ASIGNACIÓN BLINDADA: SI ES SOLICITUD NUEVA (SIN ID) ASIGNA EN MEMORIA DIRECTAMENTE
   const handleAddAssignee = async (userId: string) => {
-    if (!userId || assigneesDetails.find(a => a.profile_id === userId)) return;
+    if (!userId) return;
 
-    const newAssigneePayload = { 
-      profile_id: userId, 
-      assigned_quantity: 1, 
-      specific_instructions: '', 
-      due_date: editForm.due_date ? editForm.due_date.split('T')[0] : '',
-      status: 'pendiente',
-      deliverable_url: '',
-      delivery_notes: '',
-      assigned_items: [],
-      editing_hours: 0,
-      recording_hours: 0,
-      video_duration: ''
-    };
+    const isAlreadyAssigned = rawAssignees.some(a => a.profile_id === userId);
+    if (isAlreadyAssigned) {
+      const userObj = staffCatalog.find(s => s.id === userId);
+      const name = userObj?.full_name || 'Este colaborador';
+      
+      Swal.fire({
+        title: '¡Ya está asignado!',
+        text: `${name} ya tiene un registro en esta disciplina. No se puede duplicar.`,
+        icon: 'warning',
+        confirmButtonColor: '#D3002D'
+      });
+      return;
+    }
 
-    const updatedAssignees = [...rawAssignees, newAssigneePayload];
-    onTaskChange(activeTab, 'assignees_details', updatedAssignees);
+    const requestId = editForm.id || tasks[0]?.request_id;
+
+    // 💡 SI ES MODO CREACIÓN (TICKET NUEVO SIN ID EN SUPABASE) ASIGNAMOS EN MEMORIA
+    if (!requestId) {
+      const newAssigneePayload = { 
+        id: 'temp-' + Date.now(),
+        profile_id: userId, 
+        assigned_quantity: 1, 
+        specific_instructions: '', 
+        due_date: editForm.dueDate || editForm.due_date ? (editForm.dueDate || editForm.due_date).split('T')[0] : '',
+        status: 'pendiente',
+        deliverable_url: '',
+        delivery_notes: '',
+        assigned_items: [],
+        editing_hours: 0,
+        recording_hours: 0,
+        video_duration: ''
+      };
+
+      const updatedAssignees = [...rawAssignees, newAssigneePayload];
+      onTaskChange(activeTab, 'assignees_details', updatedAssignees);
+      return;
+    }
 
     try {
-      let targetTaskId = dbTask?.id;
+      let targetTaskId = taskConfig?.id || dbTask?.id;
 
       if (!targetTaskId) {
-        const requestId = editForm.id || tasks[0]?.request_id;
-        if (!requestId) return;
-
         const { data: newT, error: insErr } = await supabase
           .from('request_tasks')
           .insert([{ 
             request_id: requestId, 
             discipline: activeTab, 
             assigned_to: [userId], 
-            quantity: 1 
+            quantity: 1,
+            specialty_id: catalog?.find(c => getCanonicalDiscipline(c.name) === activeTabCanonical)?.id || null
           }])
           .select()
           .single();
 
         if (insErr) throw insErr;
-        if (newT) targetTaskId = newT.id;
+        if (newT) {
+          targetTaskId = newT.id;
+          onTaskChange(activeTab, 'id', targetTaskId);
+        }
       } else {
-        const currentAssignedTo = Array.isArray(dbTask.assigned_to) ? dbTask.assigned_to : [];
+        const currentAssignedTo = Array.isArray(dbTask?.assigned_to) ? dbTask.assigned_to : [];
         if (!currentAssignedTo.includes(userId)) {
           await supabase
             .from('request_tasks')
@@ -248,30 +271,75 @@ export default function TaskWorkspace({
         }
       }
 
-      if (targetTaskId) {
-        await supabase.from('task_assignees').upsert({
+      if (!targetTaskId) throw new Error("No se pudo obtener el ID de la tarea.");
+
+      const { data: insertedAssignee, error: assigneeErr } = await supabase
+        .from('task_assignees')
+        .insert({
           task_id: targetTaskId,
           profile_id: userId,
           assigned_by: profile?.id,
           assigned_quantity: 1,
           due_date: editForm.due_date ? editForm.due_date.split('T')[0] : null,
           status: 'pendiente'
-        });
+        })
+        .select()
+        .single();
+
+      let createdId = insertedAssignee?.id;
+
+      if (assigneeErr) {
+        const { data: existing } = await supabase
+          .from('task_assignees')
+          .select('id')
+          .eq('task_id', targetTaskId)
+          .eq('profile_id', userId)
+          .maybeSingle();
+
+        if (existing) createdId = existing.id;
+        else throw assigneeErr;
       }
 
-    } catch (error) {
-      console.error("Error al autoguardar la asignación:", error);
+      const newAssigneePayload = { 
+        id: createdId,
+        profile_id: userId, 
+        assigned_quantity: 1, 
+        specific_instructions: '', 
+        due_date: editForm.due_date ? editForm.due_date.split('T')[0] : '',
+        status: 'pendiente',
+        deliverable_url: '',
+        delivery_notes: '',
+        assigned_items: [],
+        editing_hours: 0,
+        recording_hours: 0,
+        video_duration: ''
+      };
+
+      const updatedAssignees = [...rawAssignees, newAssigneePayload];
+      onTaskChange(activeTab, 'assignees_details', updatedAssignees);
+
+    } catch (error: any) {
+      console.error("Error al autoguardar asignación:", error);
+      Swal.fire('Error', 'No se pudo asignar al colaborador: ' + error.message, 'error');
     }
   };
 
   const handleRemoveAssignee = async (userId: string) => {
-    const user = staffCatalog.find(s => s.id === userId);
-    const userName = user?.full_name?.split(' ')[0] || 'este colaborador';
+    const userObj = staffCatalog.find(s => s.id === userId);
+    const userName = userObj?.full_name?.split(' ')[0] || 'este colaborador';
     const isDarkTheme = document.documentElement.classList.contains('dark');
+
+    const requestId = editForm.id || tasks[0]?.request_id;
+
+    // 💡 SI ES UN TICKET NUEVO SIN GUARDAR, SOLO BORRAMOS DE LA PANTALLA
+    if (!requestId) {
+      onTaskChange(activeTab, 'assignees_details', rawAssignees.filter(a => a.profile_id !== userId));
+      return;
+    }
 
     const result = await Swal.fire({
       title: `¿Quitar a ${userName}?`,
-      text: "Se removerá de las asignaciones de esta área. Recuerda guardar cambios para confirmar.",
+      text: "Se removerá inmediatamente de la base de datos.",
       icon: 'warning',
       showCancelButton: true,
       confirmButtonColor: '#D3002D',
@@ -284,6 +352,40 @@ export default function TaskWorkspace({
 
     if (result.isConfirmed) {
       onTaskChange(activeTab, 'assignees_details', rawAssignees.filter(a => a.profile_id !== userId));
+
+      try {
+        const { data: matchedTasks } = await supabase
+          .from('request_tasks')
+          .select('id, discipline, assigned_to')
+          .eq('request_id', requestId);
+
+        if (matchedTasks && matchedTasks.length > 0) {
+          const targetTaskIds = matchedTasks
+            .filter(t => getCanonicalDiscipline(t.discipline) === activeTabCanonical)
+            .map(t => t.id);
+
+          if (targetTaskIds.length > 0) {
+            await supabase
+              .from('task_assignees')
+              .delete()
+              .in('task_id', targetTaskIds)
+              .eq('profile_id', userId);
+
+            for (const t of matchedTasks) {
+              if (getCanonicalDiscipline(t.discipline) === activeTabCanonical) {
+                const currentAssigned = Array.isArray(t.assigned_to) ? t.assigned_to : [];
+                const newAssigned = currentAssigned.filter((id: string) => id !== userId);
+                await supabase
+                  .from('request_tasks')
+                  .update({ assigned_to: newAssigned })
+                  .eq('id', t.id);
+              }
+            }
+          }
+        }
+      } catch (error) {
+        console.error("Error al eliminar asignación en Supabase:", error);
+      }
     }
   };
 
@@ -333,22 +435,53 @@ export default function TaskWorkspace({
     handleSetItemQuantity(profileId, itemName, isCurrentlyAssigned ? 0 : 1);
   };
 
-  // 🔥 MAGIA: INTERCEPCIÓN Y VALIDACIÓN ESTRICTA DEL MODAL DE SUBIDA 🔥
   const handleOpenUploadModal = async (assigneeProfileId: string) => {
-    if (!dbTask) {
-      Swal.fire('Atención', 'Primero debes guardar la asignación antes de poder entregarla.', 'warning');
+    const requestId = editForm.id || tasks[0]?.request_id;
+    let currentTaskId = taskConfig?.id || dbTask?.id;
+
+    if (!currentTaskId && requestId) {
+      const { data: foundTask } = await supabase
+        .from('request_tasks')
+        .select('id')
+        .eq('request_id', requestId)
+        .ilike('discipline', activeTab)
+        .maybeSingle();
+
+      if (foundTask) currentTaskId = foundTask.id;
+    }
+
+    if (!currentTaskId) {
+      Swal.fire({
+        title: '¡Sin Tarea Activa!', 
+        text: 'Por favor selecciona el colaborador de nuevo o guarda la configuración.', 
+        icon: 'warning',
+        confirmButtonColor: '#D3002D'
+      });
+      return;
+    }
+
+    const { data: assigneeExists } = await supabase.from('task_assignees')
+      .select('id, editing_hours, recording_hours, video_duration, status, deliverable_url, delivery_notes')
+      .eq('task_id', currentTaskId)
+      .eq('profile_id', assigneeProfileId)
+      .maybeSingle();
+
+    if (!assigneeExists) {
+      Swal.fire({
+        title: 'Sincronizando...', 
+        text: 'Sincronizando la asignación con la base de datos. Vuelve a hacer clic en Subir Material.', 
+        icon: 'info',
+        confirmButtonColor: '#D3002D'
+      });
       return;
     }
 
     const isDarkTheme = document.documentElement.classList.contains('dark');
-    const targetUser = staffCatalog.find(s => s.id === assigneeProfileId);
-    const targetName = targetUser?.full_name?.split(' ')[0] || 'esta asignación';
     
-    // Recuperamos los datos previos si es que los rebotaron
     const currentAssignee = rawAssignees.find(a => a.profile_id === assigneeProfileId) || {};
-    const defEditHrs = currentAssignee.editing_hours || '';
-    const defRecHrs = currentAssignee.recording_hours || '';
-    const rawVidDur = currentAssignee.video_duration || '';
+    const defEditHrs = currentAssignee.editing_hours || assigneeExists.editing_hours || '';
+    const defRecHrs = currentAssignee.recording_hours || assigneeExists.recording_hours || '';
+    const rawVidDur = currentAssignee.video_duration || assigneeExists.video_duration || '';
     
     let defHH = '', defMM = '', defSS = '';
     if (rawVidDur.includes(':')) {
@@ -432,17 +565,8 @@ export default function TaskWorkspace({
         const url2Val = (popup.querySelector('#swal-url-2') as HTMLInputElement).value.trim();
         const notes = (popup.querySelector('#swal-notes') as HTMLTextAreaElement).value;
         
-        // Validaciones súper estrictas para matar el bug de los 300 links base64
         if (!url1Val) {
           Swal.showValidationMessage('¡El enlace principal es obligatorio!');
-          return false;
-        }
-        if (!url1Val.startsWith('http') && !url1Val.startsWith('www')) {
-          Swal.showValidationMessage('El enlace principal debe ser una URL válida (http://...)');
-          return false;
-        }
-        if (url2Val && !url2Val.startsWith('http') && !url2Val.startsWith('www')) {
-          Swal.showValidationMessage('El enlace extra debe ser una URL válida (http://...)');
           return false;
         }
 
@@ -475,7 +599,6 @@ export default function TaskWorkspace({
           };
         }
         
-        // Solo unimos URLs válidas y limpias
         const finalUrls = [url1Val, url2Val].filter(u => u !== '').join(',');
         return { url: finalUrls, notes, extraPayload };
       }
@@ -488,7 +611,7 @@ export default function TaskWorkspace({
             editing_hours: formValues.extraPayload.editing_hours,
             recording_hours: formValues.extraPayload.recording_hours,
             video_duration: formValues.extraPayload.video_duration
-          }).eq('task_id', dbTask.id).eq('profile_id', assigneeProfileId);
+          }).eq('task_id', currentTaskId).eq('profile_id', assigneeProfileId);
 
           handleAssigneeChange(assigneeProfileId, 'editing_hours', formValues.extraPayload.editing_hours);
           handleAssigneeChange(assigneeProfileId, 'recording_hours', formValues.extraPayload.recording_hours);
@@ -498,7 +621,7 @@ export default function TaskWorkspace({
         }
       }
 
-      onDeliverTask(dbTask.id, assigneeProfileId, formValues.url, formValues.notes);
+      onDeliverTask(currentTaskId, assigneeProfileId, formValues.url, formValues.notes);
     }
   };
 
@@ -590,6 +713,10 @@ export default function TaskWorkspace({
               <select value="" onChange={e => handleAddAssignee(e.target.value)} className="bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-500/20 rounded-lg px-2 py-1 text-[10px] font-bold outline-none cursor-pointer">
                 <option value="">+ Añadir Colaborador...</option>
                 {staffCatalog.filter(s => {
+                  const roleName = (s.internal_roles?.name || '').toLowerCase();
+                  const isAdminRole = s.role_id === 3 || roleName.includes('admin') || s.is_admin === true;
+                  if (isAdminRole) return false;
+
                   const staffSpecCanonical = getCanonicalDiscipline(s.specialty || s.specialties?.name || '');
                   return staffSpecCanonical === activeTabCanonical && !assigneesDetails.find(a => a.profile_id === s.id);
                 }).map(staff => (
@@ -660,7 +787,6 @@ export default function TaskWorkspace({
                       )}
                     </div>
 
-                    {/* 🔥 MÉTRICAS INDIVIDUALES DE AUDIOVISUAL PARA EL LÍDER 🔥 */}
                     {isAvTab && !isCollaboratorView && (
                       <div className="bg-red-50/40 dark:bg-red-900/10 border-b border-red-100 dark:border-red-900/20 p-3 grid grid-cols-3 gap-3">
                         <div className="flex flex-col">
@@ -917,7 +1043,6 @@ export default function TaskWorkspace({
           )}
         </div>
 
-        {/* Botón fantasma para activar el modal del colaborador desde RightActionPanel */}
         {isCollaboratorView && (
            <button 
              id="btn-hidden-deliver" 

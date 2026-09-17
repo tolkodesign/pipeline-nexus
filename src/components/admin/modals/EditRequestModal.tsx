@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { X, Loader2, Building2, Layers, Pencil, Check, SidebarClose, SidebarOpen, Plus, Trash2, Package, ShieldAlert } from 'lucide-react'; 
+import { X, Loader2, Building2, Layers, Pencil, Check, SidebarClose, SidebarOpen, Plus, Trash2, Package, ShieldAlert, Database } from 'lucide-react'; 
 import { supabase } from '../../../lib/supabase';
 import { useAuth } from '../../../context/AuthContext'; 
 import Swal from 'sweetalert2';
@@ -9,6 +9,7 @@ import DisciplineTabs from './edit-request/DisciplineTabs';
 import TaskWorkspace from './edit-request/TaskWorkspace';
 import RightActionPanel from './edit-request/RightActionPanel';
 import RegisterAdjustmentsModal from './edit-request/RegisterAdjustmentsModal';
+import DuplicateInspectorModal from './edit-request/DuplicateInspectorModal';
 
 interface Props {
   isOpen: boolean;
@@ -91,6 +92,7 @@ export default function EditRequestModal({
   const [activeTab, setActiveTab] = useState<string>('General'); 
   const [editingAssignee, setEditingAssignee] = useState<Record<string, boolean>>({});
   const [isAdjModalOpen, setIsAdjModalOpen] = useState(false);
+  const [isInspectorOpen, setIsInspectorOpen] = useState(false);
 
   const [isGlobalEditing, setIsGlobalEditing] = useState(false);
   const [isRightPanelOpen, setIsRightPanelOpen] = useState(true);
@@ -116,7 +118,7 @@ export default function EditRequestModal({
   }, {} as any);
 
   const [editForm, setEditForm] = useState<any>({ 
-    title: '', project_id: '', status: '', priority_id: '', due_date: '', request_date: '',
+    id: '', title: '', project_id: '', status: '', priority_id: '', due_date: '', request_date: '',
     editing_hours: 0, recording_hours: 0, video_duration: '',
     needs_copy: false, needs_design: false, needs_av: false, needs_dev: false,
     needs_prod: false, needs_staff: false, needs_rp: false,
@@ -189,7 +191,20 @@ export default function EditRequestModal({
       
       if (taskIds.length > 0) {
         const { data: aData } = await supabase.from('task_assignees').select('*').in('task_id', taskIds);
-        if (aData) pivotAssignees = aData;
+        if (aData) {
+          const uniquePivotAssignees: any[] = [];
+          const seen = new Set();
+          const sortedPivot = [...aData].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+          
+          sortedPivot.forEach(p => {
+            const key = `${p.task_id}-${p.profile_id}`;
+            if (!seen.has(key)) {
+              seen.add(key);
+              uniquePivotAssignees.push(p);
+            }
+          });
+          pivotAssignees = uniquePivotAssignees;
+        }
       }
 
       tasksRes.data.forEach(task => {
@@ -208,6 +223,7 @@ export default function EditRequestModal({
             const resolvedNotes = p.delivery_notes || task.delivery_notes || '';
 
             return {
+              id: p.id, // 🔥 CRUCIAL: MANTIENE EL ID REAL EN MEMORIA DE REACT
               profile_id: p.profile_id,
               assigned_quantity: p.assigned_quantity || 1,
               specific_instructions: p.specific_instructions || '',
@@ -222,6 +238,12 @@ export default function EditRequestModal({
               video_duration: p.video_duration || ''
             };
           });
+
+          // 🛡️ DEDUPLICACIÓN EN VIVO: Si el slot ya tiene datos reales, evita que una fila vacía lo pise
+          const existingSlot = currentTasks[targetName];
+          if (existingSlot.id && existingSlot.assignees_details.length > 0 && listFromPivot.length === 0) {
+            return;
+          }
 
           currentTasks[targetName] = {
             id: task.id,
@@ -246,7 +268,6 @@ export default function EditRequestModal({
         if (request.specialty_ids && request.specialty_ids.includes(s.id)) {
           isActive = true;
         } else {
-          // 🔥 LÓGICA CANÓNICA BLINDADA PARA DETECTAR QUÉ PESTAÑAS PRENDER 🔥
           const canonicalName = getCanonicalDiscipline(s.name);
           if (request.needs_copy && canonicalName === 'contenido') isActive = true;
           if (request.needs_design && canonicalName === 'diseno') isActive = true;
@@ -261,6 +282,7 @@ export default function EditRequestModal({
     }
 
     const loadedForm = {
+      id: request.id, 
       title: request.title || '',
       project_id: request.project_id?.toString() || '', 
       status: request.status || 'pendiente',
@@ -281,7 +303,6 @@ export default function EditRequestModal({
     setEditForm(loadedForm);
     setInitialFormState(JSON.stringify(loadedForm));
 
-    // 🔥 LÓGICA INTELIGENTE DE PESTAÑA INICIAL (SIN FALLOS) 🔥
     if (targetDiscipline) {
       setActiveTab(targetDiscipline);
     } else {
@@ -290,15 +311,12 @@ export default function EditRequestModal({
       const isMySpecActive = mySpecItem ? dynamicNeeds[mySpecItem.key] : false;
 
       if (isMySpecActive && mySpecItem) {
-        // 1. Si tu área existe y está activa, métete ahí directo
         setActiveTab(mySpecItem.name);
       } else {
-        // 2. Si no, busca la PRIMERA que esté prendida (dynamicNeeds = true)
         const firstActive = disciplinesCatalog.find(d => dynamicNeeds[d.key]);
         if (firstActive) {
           setActiveTab(firstActive.name);
         } else {
-          // 3. Fallback (Todo está apagado, abre lo tuyo aunque esté gris)
           setActiveTab(mySpecItem ? mySpecItem.name : (disciplinesCatalog.length > 0 ? disciplinesCatalog[0].name : 'Contenido'));
         }
       }
@@ -480,14 +498,17 @@ export default function EditRequestModal({
       const tag = isJefaturaOrAdmin ? '[ENTREGA DIRECTA JEFATURA]' : '[ENTREGA COLABORADOR]';
       const newNotes = notes ? `${tag}: ${notes}` : `${tag}: Entregable subido.`;
 
-      const { error } = await supabase.from('task_assignees').update({ 
+      const { data, error } = await supabase.from('task_assignees').update({ 
         status: targetStatus, 
         deliverable_url: url, 
         delivery_notes: newNotes,
         completed_at: new Date().toISOString()
-      }).eq('task_id', taskId).eq('profile_id', profileId);
+      }).eq('task_id', taskId).eq('profile_id', profileId).select();
 
       if (error) throw error;
+      if (!data || data.length === 0) {
+        throw new Error('Usuario no encontrado en base de datos. ¡Guarda la configuración del tablero antes de subir material!');
+      }
 
       if (request?.status === 'pendiente') {
         await supabase.from('requests').update({ status: 'en_proceso' }).eq('id', request.id);
@@ -552,7 +573,6 @@ export default function EditRequestModal({
         return acc;
       }, {} as any);
 
-      // Calculamos de una vez los totales globales del ticket sumando de cada assignee_details
       let globalEdit = 0; let globalRec = 0; let globalDur: string[] = [];
       enabledDisciplines.forEach(disc => {
         const taskConf = safeEditForm.tasks[disc];
@@ -613,48 +633,55 @@ export default function EditRequestModal({
         }
 
         if (targetTaskId) {
-          const { data: existingPivot } = await supabase.from('task_assignees').select('*').eq('task_id', targetTaskId);
-          const currentProfileIds = new Set(taskConfig.assignees_details.map((a: any) => a.profile_id));
-
-          const removedAssignees = (existingPivot || []).filter(p => !currentProfileIds.has(p.profile_id));
-          if (removedAssignees.length > 0) {
-            await supabase.from('task_assignees').delete().in('id', removedAssignees.map(r => r.id));
-          }
-
           for (const a of taskConfig.assignees_details) {
-            const dbRecords = (existingPivot || []).filter(p => p.profile_id === a.profile_id);
-            const dbRecord = dbRecords[0];
+            
+            const { data: currentDbRecords } = await supabase.from('task_assignees')
+              .select('id, status, deliverable_url, delivery_notes, completed_at, assigned_by')
+              .eq('task_id', targetTaskId)
+              .eq('profile_id', a.profile_id);
 
-            if (dbRecords.length > 1) {
-              const duplicateIds = dbRecords.slice(1).map(r => r.id);
+            let targetRecord = currentDbRecords && currentDbRecords.length > 0 ? currentDbRecords[0] : null;
+
+            if (currentDbRecords && currentDbRecords.length > 1) {
+              const duplicateIds = currentDbRecords.slice(1).map(r => r.id);
               await supabase.from('task_assignees').delete().in('id', duplicateIds);
             }
 
-            const statusFromDb = dbRecord?.status;
+            const statusFromDb = targetRecord?.status;
             const isDbDelivered = ['entregado', 'aprobado_interno', 'aprobado', 'completado'].includes(statusFromDb || '');
 
             const assigneePayload: any = {
               task_id: targetTaskId,
               profile_id: a.profile_id,
-              assigned_by: dbRecord?.assigned_by || profile?.id,
+              assigned_by: targetRecord?.assigned_by || profile?.id,
               assigned_quantity: a.assigned_quantity || 1,
               specific_instructions: a.specific_instructions || '',
               due_date: a.due_date || safeEditForm.due_date || null,
               status: isDbDelivered ? statusFromDb : (a.status || 'pendiente'),
-              deliverable_url: isDbDelivered ? (dbRecord?.deliverable_url || a.deliverable_url || '') : (a.deliverable_url || dbRecord?.deliverable_url || ''),
-              delivery_notes: isDbDelivered ? (dbRecord?.delivery_notes || a.delivery_notes || '') : (a.delivery_notes || dbRecord?.delivery_notes || ''),
-              completed_at: dbRecord?.completed_at || null,
+              deliverable_url: isDbDelivered ? (targetRecord?.deliverable_url || a.deliverable_url || '') : (a.deliverable_url || targetRecord?.deliverable_url || ''),
+              delivery_notes: isDbDelivered ? (targetRecord?.delivery_notes || a.delivery_notes || '') : (a.delivery_notes || targetRecord?.delivery_notes || ''),
+              completed_at: targetRecord?.completed_at || null,
               assigned_items: a.assigned_items || [],
               editing_hours: Number(a.editing_hours) || 0,
               recording_hours: Number(a.recording_hours) || 0,
               video_duration: a.video_duration || null
             };
 
-            if (dbRecord) {
-              assigneePayload.id = dbRecord.id;
-            }
+            const recordIdToUpdate = targetRecord?.id || a.id;
 
-            await supabase.from('task_assignees').upsert(assigneePayload);
+            if (recordIdToUpdate) {
+              await supabase.from('task_assignees').update(assigneePayload).eq('id', recordIdToUpdate);
+            } else {
+              await supabase.from('task_assignees').insert(assigneePayload);
+            }
+          }
+
+          const currentProfileIds = new Set(taskConfig.assignees_details.map((a: any) => a.profile_id));
+          const { data: fetchToClean } = await supabase.from('task_assignees').select('id, profile_id').eq('task_id', targetTaskId);
+          const removedAssignees = (fetchToClean || []).filter(p => !currentProfileIds.has(p.profile_id));
+          
+          if (removedAssignees.length > 0) {
+            await supabase.from('task_assignees').delete().in('id', removedAssignees.map(r => r.id));
           }
         }
       }
@@ -841,6 +868,17 @@ export default function EditRequestModal({
             </div>
 
             <div className="flex items-center gap-2 w-full lg:w-auto shrink-0 justify-end">
+              {isAdmin && (
+                <button
+                  type="button"
+                  onClick={() => setIsInspectorOpen(true)}
+                  className="bg-blue-600/80 hover:bg-blue-600 backdrop-blur-md text-white border border-blue-400/40 px-3.5 h-12 rounded-xl text-xs font-black tracking-widest flex items-center gap-2 transition-all shadow-md active:scale-95 cursor-pointer"
+                  title="Auditar registros reales en Supabase"
+                >
+                  <Database size={15} /> <span className="hidden sm:inline">AUDITAR DB</span>
+                </button>
+              )}
+
               {!isCollaboratorView && canEditGlobal && editForm.status !== 'completado' && (
                 !isGlobalEditing ? (
                   <button 
@@ -1072,6 +1110,14 @@ export default function EditRequestModal({
       </div>
 
       <RegisterAdjustmentsModal isOpen={isAdjModalOpen} onClose={() => setIsAdjModalOpen(false)} request={request} tasks={tasks} onRefresh={fetchRequestTasks} />
+      
+      <DuplicateInspectorModal
+        isOpen={isInspectorOpen}
+        onClose={() => setIsInspectorOpen(false)}
+        requestId={request.id}
+        requestTitle={request.title || 'Ticket'}
+        onRefreshParent={fetchRequestTasks}
+      />
     </div>
   );
 }

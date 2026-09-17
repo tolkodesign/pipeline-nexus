@@ -1,11 +1,13 @@
 import { useState, useEffect } from 'react';
-import { X, Send, Calendar, AlertCircle, Briefcase, User, Layers, Link2, Hash, Layout, Plus, Trash2, Mail, HelpCircle, Building2, BellOff, PackageCheck, Users, ChevronDown, FileText, Flag, Sparkles, ListChecks } from 'lucide-react';
+import { X, Send, Calendar, AlertCircle, Briefcase, User, Layers, Link2, Hash, Layout, Plus, Trash2, Mail, HelpCircle, Building2, BellOff, PackageCheck, Users, ChevronDown, FileText, Flag, Sparkles, ListChecks, UserCheck, Check, Search, Package, ChevronUp } from 'lucide-react';
 import Swal from 'sweetalert2';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../context/AuthContext';
 import NewProjectModal from './NewProjectModal';
 import ModalTour from './ModalTour';
 import DeliverablesManagerModal from '../admin/modals/DeliverablesManagerModal'; 
+import DisciplineTabs from '../admin/modals/edit-request/DisciplineTabs';
+import TaskWorkspace from '../admin/modals/edit-request/TaskWorkspace';
 import { Skeleton } from '../../components/admin/ui/Skeleton';
 
 interface Props {
@@ -46,10 +48,17 @@ export default function NewRequestModal({ isOpen, onClose, organizationId, isAdm
   const [clientDeliverables, setClientDeliverables] = useState<any[]>([]);
   const [priorities, setPriorities] = useState<any[]>([]);
   const [specialtiesCatalog, setSpecialtiesCatalog] = useState<any[]>([]);
+  const [staffList, setStaffList] = useState<any[]>([]);
   const [projects, setProjects] = useState<any[]>([]); 
 
   const [isProjectModalOpen, setIsProjectModalOpen] = useState(false);
   const [isDeliverableModalOpen, setIsDeliverableModalOpen] = useState(false);
+  const [autoSelectNewDeliverable, setAutoSelectNewDeliverable] = useState(false);
+
+  // ESTADOS DEL BUSCADOR Y DESPLEGABLE PERSONALIZADO DE ENTREGABLES
+  const [isDeliverableDropdownOpen, setIsDeliverableDropdownOpen] = useState(false);
+  const [deliverableSearchQuery, setDeliverableSearchQuery] = useState('');
+  const [showIndividualsSection, setShowIndividualDeliverables] = useState(false);
   
   const [runModalTour, setRunModalTour] = useState(false);
   const [orgPrimaryColor, setOrgPrimaryColor] = useState('#D3002D');
@@ -60,7 +69,9 @@ export default function NewRequestModal({ isOpen, onClose, organizationId, isAdm
   const [requesterId, setRequesterId] = useState('');
   const [availableRequesters, setAvailableRequesters] = useState<any[]>([]);
 
-  // 🔥 EL CONSTRUCTOR LIMPIO 🔥
+  const [activeTab, setActiveTab] = useState<string>('Diseño');
+  const [editingAssignee, setEditingAssignee] = useState<Record<string, boolean>>({});
+
   const [entryMode, setEntryMode] = useState<'unico' | 'checklist'>('unico');
   const [customBreakdown, setCustomBreakdown] = useState<any[]>([]);
   const [checklistItem, setChecklistItem] = useState({
@@ -80,7 +91,7 @@ export default function NewRequestModal({ isOpen, onClose, organizationId, isAdm
   const activeOrgId = isAdminMode ? selectedOrgId : organizationId;
   const activeClientObj = clients?.find(c => c.id === activeOrgId) || { id: activeOrgId, name: 'Cliente Actual' };
 
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<any>({
     projectId: '', 
     title: '',
     department: '',
@@ -88,6 +99,7 @@ export default function NewRequestModal({ isOpen, onClose, organizationId, isAdm
     priorityId: '',
     quantity: 0, 
     dueDate: '',
+    due_date: '',
     description: '',
     ccEmails: '',
     needs_copy: false,
@@ -97,10 +109,32 @@ export default function NewRequestModal({ isOpen, onClose, organizationId, isAdm
     needs_prod: false,
     needs_staff: false,
     needs_rp: false,
-    specialty_ids: [] as number[]
+    specialty_ids: [] as number[],
+    items_breakdown: [],
+    tasks: {
+      'Contenido': { assignees_details: [], coordinator_notes: '' },
+      'Diseño': { assignees_details: [], coordinator_notes: '' },
+      'Audiovisual': { assignees_details: [], coordinator_notes: '' },
+      'Programación': { assignees_details: [], coordinator_notes: '' },
+      'Producción': { assignees_details: [], coordinator_notes: '' },
+      'Staff': { assignees_details: [], coordinator_notes: '' },
+      'RP': { assignees_details: [], coordinator_notes: '' }
+    }
   });
 
   const today = new Date().toISOString().split('T')[0];
+
+  const normDiscipline = (str: string) => {
+    const s = (str || '').toLowerCase().trim();
+    if (s.includes('dev') || s.includes('progra') || s.includes('code') || s.includes('web') || s.includes('plataforma')) return 'needs_dev';
+    if (s.includes('desig') || s.includes('diseñ') || s.includes('diseno')) return 'needs_design';
+    if (s.includes('av') || s.includes('audio') || s.includes('video')) return 'needs_av';
+    if (s.includes('copy') || s.includes('contenid') || s.includes('redac')) return 'needs_copy';
+    if (s.includes('prod')) return 'needs_prod';
+    if (s.includes('staff')) return 'needs_staff';
+    if (s.includes('rp') || s.includes('relacion')) return 'needs_rp';
+    return '';
+  };
 
   useEffect(() => {
     if (isOpen) {
@@ -134,9 +168,9 @@ export default function NewRequestModal({ isOpen, onClose, organizationId, isAdm
     }
   }, [isOpen, activeOrgId]);
 
-  const fetchDropdownData = async (orgId: string) => {
+  const fetchDropdownData = async (orgId: string, shouldAutoSelectNewest = false) => {
     try {
-      const [catsRes, priosRes, deliverablesRes, orgRes, specRes] = await Promise.all([
+      const [catsRes, priosRes, deliverablesRes, orgRes, specRes, staffRes] = await Promise.all([
         supabase.from('request_categories').select('*'),
         supabase.from('priorities').select('*').order('weight', { ascending: false }),
         supabase.from('organization_deliverables').select(`
@@ -145,15 +179,27 @@ export default function NewRequestModal({ isOpen, onClose, organizationId, isAdm
             quantity,
             item:organization_deliverables!item_deliverable_id(*)
           )
-        `).eq('organization_id', orgId).eq('is_active', true).order('name'),
+        `).eq('organization_id', orgId).eq('is_active', true).order('created_at', { ascending: false }),
         supabase.from('organizations').select('primary_color, banner_url').eq('id', orgId).single(),
-        supabase.from('specialties').select('id, name')
+        supabase.from('specialties').select('id, name'),
+        supabase.from('profiles').select('id, full_name, role_id, is_admin, specialty, specialty_id, internal_roles(name), specialties(name)').not('role_id', 'is', null)
       ]);
 
       if (catsRes.data) setCategories(catsRes.data);
       if (priosRes.data) setPriorities(priosRes.data); 
-      if (deliverablesRes.data) setClientDeliverables(deliverablesRes.data);
+      if (deliverablesRes.data) {
+        setClientDeliverables(deliverablesRes.data);
+
+        // 🔥 AUTO-SELECCIÓN AUTOMÁTICA DEL ENTREGABLE RECIÉN CREADO
+        if (shouldAutoSelectNewest && deliverablesRes.data.length > 0) {
+          const newlyCreated = deliverablesRes.data[0];
+          if (newlyCreated) {
+            selectDeliverableById(newlyCreated.id, deliverablesRes.data);
+          }
+        }
+      }
       if (specRes.data) setSpecialtiesCatalog(specRes.data);
+      if (staffRes.data) setStaffList(staffRes.data);
       if (orgRes.data) {
         if (orgRes.data.primary_color) setOrgPrimaryColor(orgRes.data.primary_color);
         if (orgRes.data.banner_url) setOrgBannerUrl(orgRes.data.banner_url);
@@ -175,12 +221,29 @@ export default function NewRequestModal({ isOpen, onClose, organizationId, isAdm
       if (data) {
         setProjects(data);
         if (autoSelectLatest && data.length > 0) {
-          setFormData(prev => ({ ...prev, projectId: data[0].id }));
+          setFormData((prev: any) => ({ ...prev, projectId: data[0].id }));
         }
       }
     } catch (error) {
       console.error("Error cargando proyectos:", error);
     }
+  };
+
+  const handleTaskChange = (discipline: string, field: string, value: any) => {
+    setFormData((prev: any) => ({
+      ...prev,
+      tasks: {
+        ...prev.tasks,
+        [discipline]: {
+          ...(prev.tasks[discipline] || {}),
+          [field]: value
+        }
+      }
+    }));
+  };
+
+  const handleToggleDiscipline = (key: string) => {
+    setFormData((prev: any) => ({ ...prev, [key]: !prev[key] }));
   };
 
   const handleLinkChange = (index: number, value: string) => {
@@ -195,14 +258,27 @@ export default function NewRequestModal({ isOpen, onClose, organizationId, isAdm
   const resetAndClose = () => {
     setFormData({ 
       projectId: '', title: '', department: '', deliverableId: '', priorityId: '', 
-      quantity: 0, dueDate: '', description: '', ccEmails: '',
+      quantity: 0, dueDate: '', due_date: '', description: '', ccEmails: '',
       needs_copy: false, needs_design: false, needs_av: false, needs_dev: false,
       needs_prod: false, needs_staff: false, needs_rp: false,
-      specialty_ids: [] as number[]
+      specialty_ids: [] as number[],
+      items_breakdown: [],
+      tasks: {
+        'Contenido': { assignees_details: [], coordinator_notes: '' },
+        'Diseño': { assignees_details: [], coordinator_notes: '' },
+        'Audiovisual': { assignees_details: [], coordinator_notes: '' },
+        'Programación': { assignees_details: [], coordinator_notes: '' },
+        'Producción': { assignees_details: [], coordinator_notes: '' },
+        'Staff': { assignees_details: [], coordinator_notes: '' },
+        'RP': { assignees_details: [], coordinator_notes: '' }
+      }
     });
     setLinks(['']); 
     setCustomBreakdown([]);
     setEntryMode('unico');
+    setIsDeliverableDropdownOpen(false);
+    setDeliverableSearchQuery('');
+    setShowIndividualDeliverables(false);
     setChecklistItem({ name: '', quantity: 1, isPackageWarning: false, needs_copy: false, needs_design: false, needs_av: false, needs_dev: false, needs_prod: false, needs_staff: false, needs_rp: false, specialty_ids: [] });
     onClose();
   };
@@ -211,14 +287,14 @@ export default function NewRequestModal({ isOpen, onClose, organizationId, isAdm
     const val = e.target.value;
     if (val === 'NUEVO_PROYECTO') {
       setIsProjectModalOpen(true);
-      setFormData(prev => ({ ...prev, projectId: '' })); 
+      setFormData((prev: any) => ({ ...prev, projectId: '' })); 
     } else {
-      setFormData(prev => ({ ...prev, projectId: val }));
+      setFormData((prev: any) => ({ ...prev, projectId: val }));
     }
   };
 
   const recalculateFromBreakdown = (items: any[]) => {
-    const newDisciplines = {
+    const newDisciplines: Record<string, any> = {
       needs_copy: false, needs_design: false, needs_av: false,
       needs_dev: false, needs_prod: false, needs_staff: false, needs_rp: false,
       specialty_ids: [] as number[]
@@ -239,14 +315,36 @@ export default function NewRequestModal({ isOpen, onClose, organizationId, isAdm
         item.specialty_ids.forEach((id: number) => allSpecIds.add(id));
       }
     });
+
+    specialtiesCatalog.forEach(s => {
+      const canonicalName = normDiscipline(s.name);
+      let isActive = false;
+      if (newDisciplines.needs_copy && canonicalName === 'needs_copy') isActive = true;
+      if (newDisciplines.needs_design && canonicalName === 'needs_design') isActive = true;
+      if (newDisciplines.needs_av && canonicalName === 'needs_av') isActive = true;
+      if (newDisciplines.needs_dev && canonicalName === 'needs_dev') isActive = true;
+      if (newDisciplines.needs_prod && canonicalName === 'needs_prod') isActive = true;
+      if (newDisciplines.needs_staff && canonicalName === 'needs_staff') isActive = true;
+      if (newDisciplines.needs_rp && canonicalName === 'needs_rp') isActive = true;
+      if (allSpecIds.has(s.id)) isActive = true;
+
+      newDisciplines[`specialty_${s.id}`] = isActive;
+    });
+
     newDisciplines.specialty_ids = Array.from(allSpecIds);
-    setFormData(prev => ({ ...prev, quantity: totalQty, ...newDisciplines }));
+
+    const firstActiveSpec = specialtiesCatalog.find(s => newDisciplines[`specialty_${s.id}`]);
+    if (firstActiveSpec) {
+      setActiveTab(firstActiveSpec.name);
+    }
+
+    setFormData((prev: any) => ({ ...prev, quantity: totalQty, items_breakdown: items, ...newDisciplines }));
   };
 
   const handleModeChange = (mode: 'unico' | 'checklist') => {
     setEntryMode(mode);
     setCustomBreakdown([]);
-    setFormData(prev => ({ ...prev, deliverableId: '', quantity: 1, needs_copy: false, needs_design: false, needs_av: false, needs_dev: false, needs_prod: false, needs_staff: false, needs_rp: false }));
+    setFormData((prev: any) => ({ ...prev, deliverableId: '', quantity: 1, items_breakdown: [], needs_copy: false, needs_design: false, needs_av: false, needs_dev: false, needs_prod: false, needs_staff: false, needs_rp: false }));
   };
 
   const handleChecklistNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -283,6 +381,7 @@ export default function NewRequestModal({ isOpen, onClose, organizationId, isAdm
       newItemsToAdd = matched.package_deliverable_items.map((pi: any) => ({
         id: Math.random().toString(),
         name: pi.item?.name || pi.item?.format_name || 'Pieza',
+        label: pi.item?.name || pi.item?.format_name || 'Pieza',
         quantity: (pi.quantity || 1) * checklistItem.quantity, 
         needs_copy: pi.item?.needs_copy || false,
         needs_design: pi.item?.needs_design || false,
@@ -297,7 +396,7 @@ export default function NewRequestModal({ isOpen, onClose, organizationId, isAdm
       const hasArea = checklistItem.needs_copy || checklistItem.needs_design || checklistItem.needs_av || checklistItem.needs_dev || checklistItem.needs_prod || checklistItem.needs_staff || checklistItem.needs_rp || checklistItem.specialty_ids.length > 0;
       if (!hasArea) return Swal.fire('Atención', 'Selecciona al menos un área (ej. Diseño, Audiovisual) para este entregable.', 'warning');
       
-      newItemsToAdd = [{ ...checklistItem, id: Math.random().toString() }];
+      newItemsToAdd = [{ ...checklistItem, label: checklistItem.name, id: Math.random().toString() }];
     }
 
     const updatedBreakdown = [...customBreakdown, ...newItemsToAdd];
@@ -307,22 +406,17 @@ export default function NewRequestModal({ isOpen, onClose, organizationId, isAdm
     setChecklistItem({ name: '', quantity: 1, isPackageWarning: false, needs_copy: false, needs_design: false, needs_av: false, needs_dev: false, needs_prod: false, needs_staff: false, needs_rp: false, specialty_ids: [] });
   };
 
-  const handleDeliverableChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const val = e.target.value;
-    if (val === 'NUEVO_ENTREGABLE') {
-      setIsDeliverableModalOpen(true);
-      setFormData(prev => ({ ...prev, deliverableId: '' }));
-      setCustomBreakdown([]);
-      return;
-    }
-    const selectedDeliv = clientDeliverables.find(d => d.id === val);
+  // 🔥 LÓGICA REUTILIZABLE PARA SELECCIONAR ENTREGABLE POR ID
+  const selectDeliverableById = (delivId: string, catalog = clientDeliverables) => {
+    const selectedDeliv = catalog.find((d: any) => d.id === delivId);
     if (!selectedDeliv) return;
-    
+
     let breakdown: any[] = [];
     if (selectedDeliv.is_package && selectedDeliv.package_deliverable_items?.length) {
       breakdown = selectedDeliv.package_deliverable_items.map((pi: any) => ({
         id: pi.item?.id || pi.item_deliverable_id || Math.random().toString(),
         name: pi.item?.name || 'Entregable',
+        label: pi.item?.name || 'Entregable',
         quantity: pi.quantity || 1,
         needs_copy: pi.item?.needs_copy, needs_design: pi.item?.needs_design,
         needs_av: pi.item?.needs_av, needs_dev: pi.item?.needs_dev,
@@ -333,6 +427,7 @@ export default function NewRequestModal({ isOpen, onClose, organizationId, isAdm
       breakdown = [{
         id: selectedDeliv.id,
         name: selectedDeliv.name || selectedDeliv.format_name,
+        label: selectedDeliv.name || selectedDeliv.format_name,
         quantity: 1,
         needs_copy: selectedDeliv.needs_copy, needs_design: selectedDeliv.needs_design,
         needs_av: selectedDeliv.needs_av, needs_dev: selectedDeliv.needs_dev,
@@ -340,9 +435,12 @@ export default function NewRequestModal({ isOpen, onClose, organizationId, isAdm
         specialty_ids: selectedDeliv.specialty_ids || []
       }];
     }
-    setFormData(prev => ({ ...prev, deliverableId: val }));
+
+    setFormData((prev: any) => ({ ...prev, deliverableId: delivId }));
     setCustomBreakdown(breakdown);
     recalculateFromBreakdown(breakdown);
+    setIsDeliverableDropdownOpen(false);
+    setDeliverableSearchQuery('');
   };
 
   const removeItemFromBreakdown = (indexToRemove: number) => {
@@ -391,8 +489,18 @@ export default function NewRequestModal({ isOpen, onClose, organizationId, isAdm
       Object.keys(specIdsMap).forEach(key => {
         if ((formData as any)[key] && specIdsMap[key]) allTaskSpecialtyIds.add(specIdsMap[key] as number);
       });
-      if (formData.specialty_ids && formData.specialty_ids.length > 0) formData.specialty_ids.forEach(id => allTaskSpecialtyIds.add(id));
+      if (formData.specialty_ids && formData.specialty_ids.length > 0) formData.specialty_ids.forEach((id: number) => allTaskSpecialtyIds.add(id));
       const finalSpecialtyIds = Array.from(allTaskSpecialtyIds);
+
+      let totalAssigneesCount = 0;
+      DISCIPLINES.forEach(d => {
+        const taskConf = formData.tasks?.[d.label];
+        if (taskConf?.assignees_details?.length > 0) {
+          totalAssigneesCount += taskConf.assignees_details.length;
+        }
+      });
+
+      const initialStatus = totalAssigneesCount > 0 ? 'en_proceso' : 'pendiente';
 
       const requestPayload = {
         organization_id: activeOrgId,
@@ -405,12 +513,12 @@ export default function NewRequestModal({ isOpen, onClose, organizationId, isAdm
         target_format_id: selectedDeliv ? selectedDeliv.target_format_id : null,
         priority_id: parseInt(formData.priorityId),
         quantity: formData.quantity || 1, 
-        due_date: formData.dueDate || null,
-        original_due_date: formData.dueDate || null,
+        due_date: formData.dueDate || formData.due_date || null,
+        original_due_date: formData.dueDate || formData.due_date || null,
         external_resource_url: activeLinks[0] || null, 
         description: finalDescription,
         cc_emails: formData.ccEmails, 
-        status: 'pendiente',
+        status: initialStatus,
         send_email_notification: !isInternalUser ? true : sendClientEmail,
         needs_copy: formData.needs_copy, needs_design: formData.needs_design,
         needs_av: formData.needs_av, needs_dev: formData.needs_dev,
@@ -431,13 +539,51 @@ export default function NewRequestModal({ isOpen, onClose, organizationId, isAdm
       const initialTasks = finalSpecialtyIds.map(specId => {
         const legacyKey = Object.keys(specIdsMap).find(k => specIdsMap[k] === specId);
         const discName = legacyKey ? disciplineNamesMap[legacyKey] : getSpecName(specId);
-        return { request_id: newRequest.id, discipline: discName, specialty_id: specId, status: 'pendiente', quantity: formData.quantity || 1 };
+        const taskConf = formData.tasks?.[discName] || {};
+        const flatAssignees = (taskConf.assignees_details || []).map((a: any) => a.profile_id);
+
+        return { 
+          request_id: newRequest.id, 
+          discipline: discName, 
+          specialty_id: specId, 
+          status: 'pendiente', 
+          quantity: formData.quantity || 1,
+          assigned_to: flatAssignees,
+          coordinator_notes: taskConf.coordinator_notes || null
+        };
       });
 
       if (initialTasks.length > 0) {
-        const { error: tasksErr } = await supabase.from('request_tasks').insert(initialTasks);
+        const { data: createdTasks, error: tasksErr } = await supabase.from('request_tasks').insert(initialTasks).select();
         if (tasksErr) console.warn("Aviso al crear tareas iniciales:", tasksErr.message);
+
+        if (createdTasks && createdTasks.length > 0 && isInternalUser) {
+          const assigneeInserts: any[] = [];
+
+          createdTasks.forEach(task => {
+            const taskConf = formData.tasks?.[task.discipline];
+            if (taskConf?.assignees_details?.length > 0) {
+              taskConf.assignees_details.forEach((a: any) => {
+                assigneeInserts.push({
+                  task_id: task.id,
+                  profile_id: a.profile_id,
+                  assigned_by: user.id,
+                  assigned_quantity: a.assigned_quantity || 1,
+                  specific_instructions: a.specific_instructions || '',
+                  assigned_items: a.assigned_items || [],
+                  due_date: a.due_date || formData.dueDate || formData.due_date || null,
+                  status: 'pendiente'
+                });
+              });
+            }
+          });
+
+          if (assigneeInserts.length > 0) {
+            await supabase.from('task_assignees').insert(assigneeInserts);
+          }
+        }
       }
+
       if (activeLinks.length > 0) {
         const linksPayload = activeLinks.map(url => ({ request_id: newRequest.id, storage_path: url, file_type: 'input', uploader_id: user.id }));
         await supabase.from('request_files').insert(linksPayload);
@@ -455,6 +601,12 @@ export default function NewRequestModal({ isOpen, onClose, organizationId, isAdm
 
   if (!isOpen) return null;
 
+  const disciplinesCatalog = specialtiesCatalog.map(s => ({
+    id: s.id,
+    key: `specialty_${s.id}`,
+    name: s.name
+  }));
+
   const headerStyle = {
     backgroundColor: orgPrimaryColor || '#D3002D',
     ...(orgBannerUrl ? {
@@ -462,6 +614,18 @@ export default function NewRequestModal({ isOpen, onClose, organizationId, isAdm
       backgroundSize: 'cover', backgroundPosition: 'center'
     } : {})
   };
+
+  const normalizedStaffCatalog = staffList.map(s => {
+    const spec = (s.specialty || '').toLowerCase().trim();
+    if (spec === 'relaciones públicas' || spec === 'relaciones publicas') { return { ...s, specialty: 'RP' }; }
+    return s;
+  });
+
+  // FILTRADO DE ENTREGABLES PARA EL DESPLEGABLE PERSONALIZADO
+  const packagesList = clientDeliverables.filter(d => d.is_package && (d.name || d.format_name || '').toLowerCase().includes(deliverableSearchQuery.toLowerCase()));
+  const individualsList = clientDeliverables.filter(d => !d.is_package && (d.name || d.format_name || '').toLowerCase().includes(deliverableSearchQuery.toLowerCase()));
+
+  const selectedDeliverableObj = clientDeliverables.find(d => d.id === formData.deliverableId);
 
   return (
     <>
@@ -582,7 +746,7 @@ export default function NewRequestModal({ isOpen, onClose, organizationId, isAdm
                       <label className="text-[10px] font-black text-luxury-red uppercase tracking-widest px-1 flex items-center gap-1.5"><Calendar size={12}/> Deadline Deseado *</label>
                       <div className="relative">
                         <Calendar className="absolute left-4 top-1/2 -translate-y-1/2 text-luxury-red/50 dark:text-luxury-red/80" size={16}/>
-                        <input required type="date" min={today} value={formData.dueDate} onChange={e => setFormData({...formData, dueDate: e.target.value})} className="w-full h-12 bg-red-50/30 dark:bg-luxury-red/5 border border-red-200 dark:border-luxury-border/50 rounded-xl pl-11 pr-4 text-sm text-gray-900 dark:text-white focus:border-luxury-red outline-none transition-colors cursor-pointer shadow-sm font-bold" />
+                        <input required type="date" min={today} value={formData.dueDate || formData.due_date} onChange={e => setFormData({...formData, dueDate: e.target.value, due_date: e.target.value})} className="w-full h-12 bg-red-50/30 dark:bg-luxury-red/5 border border-red-200 dark:border-luxury-border/50 rounded-xl pl-11 pr-4 text-sm text-gray-900 dark:text-white focus:border-luxury-red outline-none transition-colors cursor-pointer shadow-sm font-bold" />
                       </div>
                     </div>
                   </div>
@@ -604,29 +768,136 @@ export default function NewRequestModal({ isOpen, onClose, organizationId, isAdm
                     
                     {entryMode === 'unico' ? (
                       <div className="grid grid-cols-1 sm:grid-cols-12 gap-4">
-                        <div className="sm:col-span-8 space-y-1.5">
+                        
+                        {/* 🔥 DESPLEGABLE PERSONALIZADO DE ENTREGABLES (CON BUSCADOR, ÍCONOS Y AGROUPADO SEPARADO) 🔥 */}
+                        <div className="sm:col-span-8 space-y-1.5 relative">
                           <label className="text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-widest px-1 flex items-center gap-1.5"><Layers size={12}/> Entregable a Solicitar *</label>
                           {isFetching ? (
                             <Skeleton className="w-full h-12 rounded-xl" />
                           ) : (
-                            <div className="relative">
-                              <Layers className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500" size={16}/>
-                              <select required disabled={!activeOrgId} value={formData.deliverableId} onChange={handleDeliverableChange} className="w-full h-12 bg-gray-50 dark:bg-[#0a0a0c] border border-gray-200 dark:border-luxury-border rounded-xl pl-11 pr-10 text-sm text-gray-900 dark:text-white focus:border-luxury-red outline-none appearance-none cursor-pointer disabled:opacity-50 font-bold shadow-sm">
-                                <option value="" disabled>{activeOrgId ? 'Seleccionar...' : 'Falta empresa'}</option>
-                                {clientDeliverables.map(deliv => (
-                                  <option key={deliv.id} value={deliv.id}>{deliv.name || deliv.format_name}</option>
-                                ))}
-                                {activeOrgId && isAdminOrJefatura && <option value="NUEVO_ENTREGABLE" className="text-luxury-red font-black">➕ NUEVO ENTREGABLE...</option>}
-                              </select>
-                              <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" size={16}/>
+                            <div>
+                              <button
+                                type="button"
+                                disabled={!activeOrgId}
+                                onClick={() => setIsDeliverableDropdownOpen(!isDeliverableDropdownOpen)}
+                                className="w-full h-12 bg-gray-50 dark:bg-[#0a0a0c] border border-gray-200 dark:border-luxury-border rounded-xl px-4 text-sm text-gray-900 dark:text-white focus:border-luxury-red outline-none flex items-center justify-between cursor-pointer disabled:opacity-50 font-bold shadow-sm"
+                              >
+                                <span className="flex items-center gap-2 truncate">
+                                  {selectedDeliverableObj ? (
+                                    <>
+                                      {selectedDeliverableObj.is_package ? <Package size={16} className="text-amber-500 shrink-0"/> : <FileText size={16} className="text-blue-500 shrink-0"/>}
+                                      <span className="truncate">{selectedDeliverableObj.name || selectedDeliverableObj.format_name}</span>
+                                    </>
+                                  ) : (
+                                    <span className="text-gray-400 font-normal">{activeOrgId ? 'Seleccionar entregable...' : 'Falta empresa'}</span>
+                                  )}
+                                </span>
+                                <ChevronDown size={16} className={`text-gray-400 transition-transform ${isDeliverableDropdownOpen ? 'rotate-180' : ''}`}/>
+                              </button>
+
+                              {isDeliverableDropdownOpen && (
+                                <>
+                                  <div className="fixed inset-0 z-40" onClick={() => setIsDeliverableDropdownOpen(false)}/>
+                                  <div className="absolute top-full left-0 mt-2 w-full bg-white dark:bg-[#141419] border border-gray-200 dark:border-zinc-800 rounded-2xl shadow-2xl z-50 overflow-hidden flex flex-col max-h-80 animate-in fade-in zoom-in-95 duration-150">
+                                    
+                                    {/* BUSCADOR DENTRO DEL MENU */}
+                                    <div className="p-3 border-b border-gray-100 dark:border-zinc-800 bg-gray-50/50 dark:bg-black/30 shrink-0 relative">
+                                      <Search className="absolute left-6 top-1/2 -translate-y-1/2 text-gray-400" size={14}/>
+                                      <input 
+                                        type="text"
+                                        placeholder="Buscar entregable o paquete..."
+                                        value={deliverableSearchQuery}
+                                        onChange={e => setDeliverableSearchQuery(e.target.value)}
+                                        className="w-full h-9 bg-white dark:bg-[#070709] border border-gray-200 dark:border-zinc-700 rounded-xl pl-9 pr-3 text-xs text-gray-900 dark:text-white outline-none focus:border-luxury-red font-bold"
+                                        autoFocus
+                                      />
+                                    </div>
+
+                                    <div className="overflow-y-auto custom-scrollbar p-2 space-y-2 flex-1">
+                                      
+                                      {/* SECCIÓN 1: 📦 PAQUETES DE ENTREGABLES */}
+                                      {packagesList.length > 0 && (
+                                        <div className="space-y-1">
+                                          <span className="text-[9px] font-black uppercase text-amber-500 px-2 flex items-center gap-1 tracking-widest">
+                                            <Package size={12}/> Paquetes Completo ({packagesList.length})
+                                          </span>
+                                          {packagesList.map(deliv => (
+                                            <div
+                                              key={deliv.id}
+                                              onClick={() => selectDeliverableById(deliv.id)}
+                                              className={`p-2.5 rounded-xl text-xs font-bold cursor-pointer transition-all flex items-center justify-between group ${formData.deliverableId === deliv.id ? 'bg-amber-50 dark:bg-amber-950/30 text-amber-600 dark:text-amber-400' : 'hover:bg-gray-50 dark:hover:bg-white/5 text-gray-800 dark:text-gray-200'}`}
+                                            >
+                                              <div className="flex items-center gap-2 truncate">
+                                                <Package size={15} className="text-amber-500 shrink-0"/>
+                                                <span className="truncate">{deliv.name || deliv.format_name}</span>
+                                              </div>
+                                              <span className="text-[9px] font-bold bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 px-1.5 py-0.5 rounded shrink-0">PAQUETE</span>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      )}
+
+                                      {/* BOTÓN COLAPSIBLE PARA ENTREGABLES INDIVIDUALES */}
+                                      {individualsList.length > 0 && (
+                                        <div className="pt-1">
+                                          <button
+                                            type="button"
+                                            onClick={() => setShowIndividualDeliverables(!showIndividualsSection)}
+                                            className="w-full p-2 bg-gray-100 dark:bg-zinc-900/80 hover:bg-gray-200 dark:hover:bg-zinc-800 rounded-xl text-[10px] font-black uppercase tracking-widest text-gray-600 dark:text-gray-400 flex items-center justify-between transition-colors cursor-pointer"
+                                          >
+                                            <span className="flex items-center gap-1.5">
+                                              <FileText size={13}/> Ver Entregables Individuales ({individualsList.length})
+                                            </span>
+                                            {showIndividualsSection || deliverableSearchQuery ? <ChevronUp size={14}/> : <ChevronDown size={14}/>}
+                                          </button>
+
+                                          {/* SECCIÓN 2: 📄 ENTREGABLES INDIVIDUALES */}
+                                          {(showIndividualsSection || deliverableSearchQuery.trim() !== '') && (
+                                            <div className="mt-1 space-y-1 pl-1 animate-in fade-in duration-150">
+                                              {individualsList.map(deliv => (
+                                                <div
+                                                  key={deliv.id}
+                                                  onClick={() => selectDeliverableById(deliv.id)}
+                                                  className={`p-2 rounded-xl text-xs font-bold cursor-pointer transition-all flex items-center justify-between group ${formData.deliverableId === deliv.id ? 'bg-blue-50 dark:bg-blue-950/30 text-blue-600 dark:text-blue-400' : 'hover:bg-gray-50 dark:hover:bg-white/5 text-gray-700 dark:text-gray-300'}`}
+                                                >
+                                                  <div className="flex items-center gap-2 truncate">
+                                                    <FileText size={14} className="text-blue-500 shrink-0"/>
+                                                    <span className="truncate">{deliv.name || deliv.format_name}</span>
+                                                  </div>
+                                                </div>
+                                              ))}
+                                            </div>
+                                          )}
+                                        </div>
+                                      )}
+
+                                      {/* OPCIÓN PARA CREAR NUEVO ENTREGABLE */}
+                                      {activeOrgId && isAdminOrJefatura && (
+                                        <div 
+                                          onClick={() => {
+                                            setIsDeliverableDropdownOpen(false);
+                                            setAutoSelectNewDeliverable(true);
+                                            setIsDeliverableModalOpen(true);
+                                          }}
+                                          className="p-2.5 rounded-xl text-xs font-black uppercase tracking-wider text-luxury-red hover:bg-red-50 dark:hover:bg-red-950/20 cursor-pointer transition-colors flex items-center gap-2 border-t border-gray-100 dark:border-zinc-800 mt-2"
+                                        >
+                                          <Plus size={14} strokeWidth={3}/> CREAR NUEVO ENTREGABLE...
+                                        </div>
+                                      )}
+
+                                    </div>
+                                  </div>
+                                </>
+                              )}
                             </div>
                           )}
                         </div>
+
                         <div className="sm:col-span-4 space-y-1.5">
                           <label className="text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-widest px-1 flex items-center gap-1.5"><Hash size={12}/> Cantidad *</label>
                           <div className="relative">
                             <Hash className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500" size={16}/>
-                            <input required type="number" min={1} max={99} value={formData.quantity} onChange={e => {
+                            <input required type="number" min={1} value={formData.quantity} onChange={e => {
                                const newQty = parseInt(e.target.value) || 1;
                                setFormData({...formData, quantity: newQty});
                                if(customBreakdown.length === 1) {
@@ -639,7 +910,6 @@ export default function NewRequestModal({ isOpen, onClose, organizationId, isAdm
                         </div>
                       </div>
                     ) : (
-                      // 🔥 CONSTRUCTOR DE CHECKLIST (EL CARRITO) 🔥
                       <div className="space-y-4">
                         <div className="bg-gray-50 dark:bg-[#0a0a0c] border border-gray-200 dark:border-luxury-border p-4 rounded-2xl space-y-4 shadow-sm">
                           
@@ -662,7 +932,7 @@ export default function NewRequestModal({ isOpen, onClose, organizationId, isAdm
                             <div className="w-20 space-y-1.5">
                               <label className="text-[9px] font-bold text-gray-500 dark:text-gray-400 uppercase px-1">Cant.</label>
                               <input 
-                                type="number" min={1} max={99} 
+                                type="number" min={1} 
                                 value={checklistItem.quantity} 
                                 onChange={e => setChecklistItem({...checklistItem, quantity: parseInt(e.target.value)||1})} 
                                 className="w-full h-10 bg-white dark:bg-[#141419] border border-gray-200 dark:border-white/10 rounded-xl px-3 text-sm text-gray-900 dark:text-white font-bold text-center outline-none focus:border-luxury-red shadow-sm" 
@@ -678,7 +948,6 @@ export default function NewRequestModal({ isOpen, onClose, organizationId, isAdm
                               </p>
                             </div>
                           ) : (
-                            // 🔥 DROPDOWN DE ÁREAS (EL NUEVO SELECCIONADOR FINO) 🔥
                             <div className="space-y-2">
                               <label className="text-[9px] font-bold text-gray-500 dark:text-gray-400 uppercase px-1">Confirma las áreas de trabajo para este ítem *</label>
                               
@@ -701,7 +970,6 @@ export default function NewRequestModal({ isOpen, onClose, organizationId, isAdm
                                 <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" size={16}/>
                               </div>
 
-                              {/* CHIPS DE ÁREAS SELECCIONADAS */}
                               {DISCIPLINES.some(d => checklistItem[d.key as keyof typeof checklistItem]) && (
                                 <div className="flex flex-wrap gap-2 mt-2">
                                   {DISCIPLINES.filter(d => checklistItem[d.key as keyof typeof checklistItem]).map(disc => (
@@ -724,7 +992,6 @@ export default function NewRequestModal({ isOpen, onClose, organizationId, isAdm
                       </div>
                     )}
 
-                    {/* VISTA DEL CARRITO (Desglose Visual) */}
                     {customBreakdown.length > 0 && (
                       <div className="bg-red-50/50 dark:bg-luxury-red/5 border border-red-100 dark:border-luxury-red/20 p-4 rounded-2xl space-y-3 animate-in fade-in duration-200">
                         <div className="flex items-center justify-between border-b border-red-100 dark:border-luxury-red/20 pb-2">
@@ -761,6 +1028,49 @@ export default function NewRequestModal({ isOpen, onClose, organizationId, isAdm
                   </div>
                 </div>
               </div>
+
+              {/* REUTILIZACIÓN EXACTA DE DISCIPLINE TABS Y TASK WORKSPACE PARA LÍDERES/ADMINS */}
+              {isInternalUser && (
+                <div className="space-y-6 pt-6 border-t border-gray-200 dark:border-luxury-border/50">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[10px] font-black text-luxury-red uppercase tracking-widest flex items-center gap-2">
+                      <UserCheck size={16}/> MESA DE TRABAJO Y ASIGNACIONES PREVIAS (OPCIONAL)
+                    </label>
+                  </div>
+
+                  <DisciplineTabs 
+                    catalog={disciplinesCatalog} 
+                    editForm={formData} 
+                    activeTab={activeTab} 
+                    setActiveTab={setActiveTab} 
+                    tasks={[]} 
+                    canToggle={(discName) => true} 
+                    onToggleDiscipline={handleToggleDiscipline} 
+                  />
+
+                  <TaskWorkspace 
+                    catalog={disciplinesCatalog}
+                    activeTab={activeTab} 
+                    editForm={formData} 
+                    tasks={[]} 
+                    staffCatalog={normalizedStaffCatalog} 
+                    profile={profile} 
+                    mySpecialty={null} 
+                    isAdmin={true} 
+                    isJefatura={true}
+                    isCollaboratorView={false}
+                    isCancelled={false}
+                    loadingTaskId={null} 
+                    editingAssignee={editingAssignee} 
+                    setEditingAssignee={setEditingAssignee} 
+                    onTaskChange={handleTaskChange} 
+                    onSendCorrections={() => {}} 
+                    onInternalApprove={() => {}} 
+                    onUndoInternalApprove={() => {}}
+                    onDeliverTask={() => {}} 
+                  />
+                </div>
+              )}
 
               {/* ÚLTIMA FILA: BRIEF Y ENLACES */}
               <div className="space-y-6 pt-6 border-t border-gray-200 dark:border-luxury-border/50">
@@ -847,7 +1157,8 @@ export default function NewRequestModal({ isOpen, onClose, organizationId, isAdm
         isOpen={isDeliverableModalOpen} 
         onClose={() => {
           setIsDeliverableModalOpen(false);
-          if (activeOrgId) fetchDropdownData(activeOrgId); 
+          if (activeOrgId) fetchDropdownData(activeOrgId, autoSelectNewDeliverable);
+          setAutoSelectNewDeliverable(false);
         }} 
         client={activeClientObj} 
       />

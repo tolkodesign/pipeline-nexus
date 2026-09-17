@@ -24,7 +24,6 @@ import NotificationBell from '../../components/ui/NotificationBell';
 import ClientAnalytics from '../../components/client/ClientAnalytics';
 import CalendarPage from '../../components/admin/tabs/CalendarPage';
 
-// 🔥 IMPORTAMOS EL CALENDAR PARA EL NUEVO FILTRO DE FECHAS
 import { LayoutGrid, CheckCircle2, Flame, Clock, ArrowRight, Activity, Search, SlidersHorizontal, ArrowUpDown, ChevronLeft, ChevronRight, AlertTriangle, History, X, Filter, BellRing, Plus, Building2, FolderKanban, Calendar } from 'lucide-react';
 import Swal from 'sweetalert2';
 
@@ -40,9 +39,13 @@ export default function AdminDashboard() {
     return hash || 'dashboard';
   });
 
+  // 🔥 CORRECCIÓN 1: Conservar el ?ticket=... al navegar entre pestañas
   useEffect(() => {
-    navigate(`#${activeTab}`, { replace: true });
-  }, [activeTab, navigate]);
+    const currentHash = location.hash.replace('#', '');
+    if (currentHash !== activeTab) {
+      navigate(`${location.pathname}${location.search}#${activeTab}`, { replace: true });
+    }
+  }, [activeTab, navigate, location.pathname, location.search, location.hash]);
 
   const [requests, setRequests] = useState<any[]>([]);
   const [prioritiesCatalog, setPrioritiesCatalog] = useState<any[]>([]);
@@ -59,12 +62,10 @@ export default function AdminDashboard() {
   const [modalSearchQuery, setModalSearchQuery] = useState('');
   const [modalClientFilter, setModalClientFilter] = useState('todos');
 
-  // 🔥 ESTADOS PARA PAGINACIÓN DEL MODAL
   const [modalCurrentPage, setModalCurrentPage] = useState(1);
   const [modalItemsPerPage, setModalItemsPerPage] = useState(10);
 
-  // 🔥 ESTADOS PARA EL FILTRO DE FECHAS
-  const [frequencyFilter, setFrequencyFilter] = useState('todos');
+  const [frequencyFilter, setFrequencyFilter] = useState('mensual');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
 
@@ -147,10 +148,11 @@ export default function AdminDashboard() {
         if (fetchedReq) targetReq = fetchedReq;
       }
 
+      // 🔥 CORRECCIÓN 2: Solo limpiamos la URL si DE VERDAD encontramos y abrimos el ticket
       if (targetReq) {
         setSelectedRequest(targetReq);
+        window.history.replaceState(null, '', window.location.pathname + window.location.hash);
       }
-      window.history.replaceState(null, '', window.location.pathname + window.location.hash);
     };
 
     checkAndOpenTicket();
@@ -229,12 +231,16 @@ export default function AdminDashboard() {
     }
   };
 
-  const fetchDashboardData = async () => {
-    if (requests.length === 0) setLoading(true);
-    
-    try {
-      const [requestsRes, prioritiesRes, auditRes, staffRes, specsRes] = await Promise.all([
-        supabase.from('requests').select(`
+  const fetchAllActiveRequests = async () => {
+    let allRecords: any[] = [];
+    let page = 0;
+    const pageSize = 1000;
+    let keepFetching = true;
+
+    while (keepFetching) {
+      const { data, error } = await supabase
+        .from('requests')
+        .select(`
           *, 
           specialty_ids,
           organizations ( name, logo_url ), 
@@ -244,8 +250,36 @@ export default function AdminDashboard() {
           profiles!requests_requester_id_fkey(full_name),
           request_tasks ( * ) 
         `)
-        .eq('is_active', true) // 🔥 AQUÍ ESTÁ EL BLINDAJE: Solo solicitudes activas
-        .order('created_at', { ascending: false }),
+        .eq('is_active', true)
+        .order('created_at', { ascending: false })
+        .range(page * pageSize, (page + 1) * pageSize - 1);
+
+      if (error) {
+        console.error("Error cargando bloque de solicitudes:", error);
+        break;
+      }
+
+      if (data && data.length > 0) {
+        allRecords = [...allRecords, ...data];
+        if (data.length < pageSize) {
+          keepFetching = false;
+        } else {
+          page++;
+        }
+      } else {
+        keepFetching = false;
+      }
+    }
+
+    return allRecords;
+  };
+
+  const fetchDashboardData = async () => {
+    if (requests.length === 0) setLoading(true);
+    
+    try {
+      const [allRequestsRaw, prioritiesRes, auditRes, staffRes, specsRes] = await Promise.all([
+        fetchAllActiveRequests(),
         supabase.from('priorities').select('*'),
         supabase.from('audit_logs').select('*, profiles(full_name, avatar_url)').order('created_at', { ascending: false }).limit(15),
         supabase.from('profiles').select('id, full_name, role_id, specialty_id, internal_roles(name), specialties(name)').not('role_id', 'is', null),
@@ -268,8 +302,8 @@ export default function AdminDashboard() {
         setStaffCatalog(formattedStaff);
       }
 
-      if (requestsRes.data) {
-        const formatted = requestsRes.data.map((r: any) => {
+      if (allRequestsRaw) {
+        const formatted = allRequestsRaw.map((r: any) => {
           const tasks = r.request_tasks || [];
           const hasCorrections = tasks.some((t: any) => t.status === 'con_correcciones');
           const hasDeliveries = tasks.some((t: any) => ['entregado', 'aprobado_interno', 'aprobado'].includes(t.status)) || r.status === 'completado';
@@ -511,33 +545,34 @@ export default function AdminDashboard() {
     return true;
   };
 
-  // 🔥 LÓGICA MAESTRA: FILTRADO POR FRECUENCIA Y POR RANGO DE FECHAS (DE: A:)
   const globalFilteredRequests = requests.filter(req => {
     const dateStr = req.request_date || req.created_at;
     if (!dateStr) return false;
     
     const reqDateOnly = String(dateStr).split('T')[0];
 
-    // 1. FILTRO DE FECHAS (Calendario Libre)
     if (dateFrom && reqDateOnly < dateFrom) return false;
     if (dateTo && reqDateOnly > dateTo) return false;
 
-    // 2. FILTRO DE FRECUENCIA PREDEFINIDA
     if (frequencyFilter !== 'todos') {
       const [year, month, day] = reqDateOnly.split('-');
-      const reqDateObj = new Date(Number(year), Number(month) - 1, Number(day), 12, 0, 0);
+      const reqYear = Number(year);
+      const reqMonth = Number(month) - 1; // 0-indexed
+      const reqDateObj = new Date(reqYear, reqMonth, Number(day), 12, 0, 0);
       const now = new Date();
-      
+
       const diffTime = Math.abs(now.getTime() - reqDateObj.getTime());
       const diffDays = diffTime / (1000 * 60 * 60 * 24);
 
       switch (frequencyFilter) {
-        case 'diaria': if(diffDays > 1.5) return false; break;
-        case 'semanal': if(diffDays > 7) return false; break;
-        case 'mensual': if(diffDays > 30) return false; break;
-        case 'trimestral': if(diffDays > 90) return false; break;
-        case 'semestral': if(diffDays > 180) return false; break;
-        case 'anual': if(diffDays > 365) return false; break;
+        case 'mensual':
+          if (reqYear !== now.getFullYear() || reqMonth !== now.getMonth()) return false;
+          break;
+        case 'diaria': if (diffDays > 1.5) return false; break;
+        case 'semanal': if (diffDays > 7) return false; break;
+        case 'trimestral': if (diffDays > 90) return false; break;
+        case 'semestral': if (diffDays > 180) return false; break;
+        case 'anual': if (diffDays > 365) return false; break;
       }
     }
     
@@ -553,7 +588,6 @@ export default function AdminDashboard() {
     return isMyAreaPending(r); 
   });
 
-  // Métricas reaccionan al filtro de fechas
   const stats = {
     total: globalFilteredRequests.length,
     enProceso: globalFilteredRequests.filter(r => r.status === 'en_proceso').length,
@@ -631,7 +665,6 @@ export default function AdminDashboard() {
     return `${Math.floor(hours / 24)} d`;
   };
 
-  // Reset de página al cambiar cualquier filtro maestro
   useEffect(() => { setCurrentPage(1); }, [searchPipeline, selectedClients, priorityFilter, frequencyFilter, dateFrom, dateTo, sortBy, itemsPerPage, pipelineTab]);
 
   return (
@@ -668,7 +701,6 @@ export default function AdminDashboard() {
                     </div>
                     
                     <div className="w-full xl:w-auto flex flex-col sm:flex-row items-center gap-3">
-                      {/* 🔥 NUEVO: FILTRO POR RANGO DE FECHAS */}
                       <div className="flex items-center w-full sm:w-auto gap-2 bg-gray-50 dark:bg-[#0a0a0c] border border-gray-200 dark:border-luxury-border rounded-xl px-3 py-2 shadow-sm">
                         <Calendar size={14} className="text-luxury-red shrink-0" />
                         <span className="text-[10px] font-black uppercase text-gray-400">De:</span>
@@ -682,10 +714,10 @@ export default function AdminDashboard() {
                         onChange={e => setFrequencyFilter(e.target.value)} 
                         className="w-full sm:w-auto bg-gray-50 dark:bg-[#0a0a0c] border border-gray-200 dark:border-luxury-border rounded-xl p-3 text-xs text-gray-900 dark:text-white font-bold outline-none cursor-pointer uppercase tracking-wider transition-colors duration-300"
                       >
+                        <option value="mensual">Mes Actual (En Curso)</option>
                         <option value="todos">Histórico (Todas)</option>
                         <option value="diaria">Diarias (24h)</option>
                         <option value="semanal">Semanales (7 días)</option>
-                        <option value="mensual">Mensuales (30 días)</option>
                         <option value="trimestral">Trimestrales (90 días)</option>
                         <option value="semestral">Semestrales (180 días)</option>
                         <option value="anual">Anuales (365 días)</option>
@@ -700,11 +732,10 @@ export default function AdminDashboard() {
                     </div>
                   </div>
 
-                  {/* 🔥 TARJETAS DE ESTADÍSTICAS CON SKELETON 🔥 */}
                   <div className="space-y-6">
                     <div className="grid grid-cols-1 text-3xl md:grid-cols-2 lg:grid-cols-4 gap-6">
                       <StatCard 
-                        label="Total Pedidos" 
+                        label="Total Solicitudes" 
                         value={stats.total} 
                         loading={loading}
                         icon={<LayoutGrid className="text-gray-900 dark:text-white transition-colors duration-300"/>} 
@@ -747,7 +778,6 @@ export default function AdminDashboard() {
                       />
                     </div>
 
-                    {/* 🔥 TARJETAS DE PRIORIDADES CON SKELETON 🔥 */}
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                       {['Alta', 'Media', 'Baja'].map((prio) => (
                         <button key={prio} type="button" onClick={() => setActivePriorityModal(prio)} className="p-6 rounded-2xl border border-gray-200 dark:border-luxury-border bg-white dark:bg-luxury-card shadow-sm dark:shadow-none hover:border-luxury-red/40 dark:hover:border-luxury-red/40 transition-all duration-300 text-left h-36 flex flex-col justify-between group cursor-pointer">
@@ -770,7 +800,6 @@ export default function AdminDashboard() {
                     </div>
                   </div>
 
-                  {/* 🔥 GRÁFICAS CON SKELETON 🔥 */}
                   <div className="w-full min-w-0 overflow-hidden">
                     <ClientAnalytics 
                       loading={loading}
@@ -781,7 +810,6 @@ export default function AdminDashboard() {
                     />
                   </div>
 
-                  {/* 🔥 ACTIVIDAD RECIENTE CON SKELETON 🔥 */}
                   <div className="bg-white dark:bg-luxury-card border border-gray-200 dark:border-luxury-border shadow-sm dark:shadow-none transition-colors duration-300 rounded-2xl p-4 flex flex-col">
                     <h3 className="text-xs font-black text-gray-500 dark:text-gray-400 uppercase tracking-widest flex items-center gap-2 mb-4 px-2 transition-colors duration-300"><History size={14} className="text-luxury-red"/> Actividad Reciente</h3>
                     <div className="flex gap-4 overflow-x-auto custom-scrollbar pb-2 px-2">
@@ -900,7 +928,6 @@ export default function AdminDashboard() {
                     </div>
 
                     <div className="space-y-4 w-full">
-                      {/* 🔥 APLICAMOS SKELETONS AL PIPELINE 🔥 */}
                       {loading ? (
                         <div className="overflow-x-auto custom-scrollbar w-full pb-2">
                           <div className="min-w-[1000px] space-y-4 pr-2">
@@ -1041,7 +1068,6 @@ export default function AdminDashboard() {
               </div>
 
               <div className="p-4 sm:p-6 overflow-y-auto custom-scrollbar flex flex-col gap-4 flex-1 bg-gray-50/50 dark:bg-[#0a0a0c]/50">
-                {/* 🔥 SKELETONS Y PAGINACIÓN DEL MODAL 🔥 */}
                 {loading ? (
                   <div className="overflow-x-auto custom-scrollbar w-full pb-2">
                     <div className="min-w-[1000px] flex flex-col gap-4 pr-2 pb-4">
@@ -1075,7 +1101,6 @@ export default function AdminDashboard() {
                 )}
               </div>
 
-              {/* 🔥 CONTROLES DE PAGINACIÓN DEL MODAL */}
               {!loading && filteredModalReqs.length > 0 && (
                 <div className="p-4 border-t border-gray-200 dark:border-luxury-border bg-white dark:bg-[#0a0a0c] flex flex-col sm:flex-row justify-between items-center gap-4 shrink-0 rounded-b-3xl">
                   <div className="flex items-center gap-2 text-xs font-bold text-gray-500">

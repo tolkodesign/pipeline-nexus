@@ -1,5 +1,5 @@
 import { lazy, Suspense } from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { Loader2 } from 'lucide-react'; 
 
@@ -17,6 +17,8 @@ const UpdatePassword = lazy(() => import('./auth/UpdatePassword'));
 // 🛡️ CADENERO DE ACCESOS INTELIGENTE
 const ProtectedRoute = ({ children, allowedArea }: { children: any, allowedArea: 'admin' | 'coordinator' | 'colaborador' | 'client' }) => {
   const { user, profile, loading } = useAuth();
+  const location = useLocation();
+  const searchParams = location.search; // 🔥 AQUÍ ATRAPAMOS EL ?ticket=12345
 
   if (loading) return (
     <div className="min-h-screen bg-luxury-card flex flex-col gap-4 items-center justify-center font-sans">
@@ -27,40 +29,39 @@ const ProtectedRoute = ({ children, allowedArea }: { children: any, allowedArea:
     </div>
   );
 
-  if (!user) return <Navigate to="/login" replace />;
+  // Si no está logueado, lo mandamos al login PERO llevándonos el ticket
+  if (!user) return <Navigate to={`/login${searchParams}`} replace />;
 
   const roleIdNum = Number(profile?.role_id);
   const isAdminUser = profile?.is_admin || roleIdNum === 3; // 3 es Admin Supremo
 
   // REINO 1: ADMIN SUPREMO
-  // 🔥 CORREGIDO: SOLO Admins reales entran aquí. Si entra un Líder (2), va a /coordinator
   if (allowedArea === 'admin') {
     if (isAdminUser) return children;
-    if ([2, 4, 5].includes(roleIdNum)) return <Navigate to="/coordinator" replace />;
-    if (roleIdNum === 1) return <Navigate to="/colaborador" replace />; 
-    return <Navigate to="/client" replace />; 
+    if ([2, 4, 5].includes(roleIdNum)) return <Navigate to={`/coordinator${searchParams}`} replace />;
+    if (roleIdNum === 1) return <Navigate to={`/colaborador${searchParams}`} replace />; 
+    return <Navigate to={`/client${searchParams}`} replace />; 
   }
 
   // REINO 2: JEFATURAS (LÍDERES = 2, COORDINADORES = 4, EJECUTIVOS = 5)
   if (allowedArea === 'coordinator') {
     if ([2, 4, 5].includes(roleIdNum) || isAdminUser) return children;
-    if (roleIdNum === 1) return <Navigate to="/colaborador" replace />; 
-    return <Navigate to="/client" replace />;
+    if (roleIdNum === 1) return <Navigate to={`/colaborador${searchParams}`} replace />; 
+    return <Navigate to={`/client${searchParams}`} replace />;
   }
 
   // REINO 3: COLABORADORES
   if (allowedArea === 'colaborador') {
     if (roleIdNum === 1 || isAdminUser) return children; 
-    if ([2, 4, 5].includes(roleIdNum)) return <Navigate to="/coordinator" replace />; 
-    return <Navigate to="/client" replace />;
+    if ([2, 4, 5].includes(roleIdNum)) return <Navigate to={`/coordinator${searchParams}`} replace />; 
+    return <Navigate to={`/client${searchParams}`} replace />;
   }
 
   // REINO 4: CLIENTES EXTERNOS
-  // 🔥 CORREGIDO: Si un Líder (2) cae aquí, se le rebota a /coordinator
   if (allowedArea === 'client') {
-    if (isAdminUser) return <Navigate to="/admin" replace />; 
-    if ([2, 4, 5].includes(roleIdNum)) return <Navigate to="/coordinator" replace />;
-    if (roleIdNum === 1) return <Navigate to="/colaborador" replace />; 
+    if (isAdminUser) return <Navigate to={`/admin${searchParams}`} replace />; 
+    if ([2, 4, 5].includes(roleIdNum)) return <Navigate to={`/coordinator${searchParams}`} replace />;
+    if (roleIdNum === 1) return <Navigate to={`/colaborador${searchParams}`} replace />; 
     return children;
   }
 
@@ -70,22 +71,29 @@ const ProtectedRoute = ({ children, allowedArea }: { children: any, allowedArea:
 // 🔀 REDIRECCIÓN MAESTRA POST-LOGIN / RAÍZ
 const RootRedirect = () => {
   const { user, profile, loading } = useAuth();
+  const location = useLocation();
+  const searchParams = location.search; // 🔥 ATRAPAMOS EL TICKET AQUÍ TAMBIÉN
   
   if (loading) return null;
-  if (!user) return <Navigate to="/login" replace />;
+  if (!user) return <Navigate to={`/login${searchParams}`} replace />;
 
   const roleIdNum = Number(profile?.role_id);
 
-  // 🔥 CORREGIDO: ROL 2 (LÍDERES) AHORA VA DIRECTO A /coordinator
   if (profile?.is_admin || roleIdNum === 3) {
-    return <Navigate to="/admin" replace />;
+    return <Navigate to={`/admin${searchParams}`} replace />;
   } else if ([2, 4, 5].includes(roleIdNum)) {
-    return <Navigate to="/coordinator" replace />;
+    return <Navigate to={`/coordinator${searchParams}`} replace />;
   } else if (roleIdNum === 1) {
-    return <Navigate to="/colaborador" replace />; 
+    return <Navigate to={`/colaborador${searchParams}`} replace />; 
   } else {
-    return <Navigate to="/client" replace />;
+    return <Navigate to={`/client${searchParams}`} replace />;
   }
+};
+
+// 🪝 COMPONENTE PARA EL CATCH-ALL QUE CONSERVE LA URL
+const CatchAllRedirect = () => {
+  const location = useLocation();
+  return <Navigate to={`/${location.search}`} replace />;
 };
 
 function App() {
@@ -121,9 +129,13 @@ function App() {
               <ProtectedRoute allowedArea="client"> <ClientLayout /> </ProtectedRoute>
             } />
 
-            {/* ENRUTADOR DE RAÍZ Y CATCH-ALL */}
+            {/* ENRUTADOR DE RAÍZ, /dashboard Y CATCH-ALL */}
             <Route path="/" element={<RootRedirect />} />
-            <Route path="*" element={<Navigate to="/" replace />} />
+            
+            {/* 🔥 Esta ruta ataja los links de los correos que van a /dashboard */}
+            <Route path="/dashboard" element={<RootRedirect />} /> 
+            
+            <Route path="*" element={<CatchAllRedirect />} />
           </Routes>
         </Suspense>
       </Router>

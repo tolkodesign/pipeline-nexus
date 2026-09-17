@@ -13,6 +13,9 @@ serve(async (req) => {
 
     let supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
     const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+    
+    // 🔥 AQUÍ DEFINIMOS LA URL DE TU FRONTEND (Configúrala en los Secrets de Supabase)
+    const frontendUrl = Deno.env.get("FRONTEND_URL") || "https://pipeline.tolkogroup.com";
 
     if (supabaseUrl.includes("127.0.0.1") || supabaseUrl.includes("localhost")) {
       supabaseUrl = "http://kong:8000";
@@ -72,7 +75,7 @@ serve(async (req) => {
 
       // 🎨 MAPEADO DE ÁREAS REQUERIDAS (DINÁMICO)
       const requiredAreasList: string[] = [];
-      if (record.needs_dev) requiredAreasList.push("Plataformas Digitales"); // 👉 RENOMBRADO AQUÍ
+      if (record.needs_dev) requiredAreasList.push("Plataformas Digitales");
       if (record.needs_copy) requiredAreasList.push("Contenido");
       if (record.needs_design) requiredAreasList.push("Diseño");
       if (record.needs_av) requiredAreasList.push("Audiovisual");
@@ -101,7 +104,6 @@ serve(async (req) => {
         ? requiredAreasList.join(", ") 
         : "General";
 
-      // Formateamos la hora en la que entró la solicitud
       const requestDate = new Date().toLocaleString('es-MX', { 
         timeZone: 'America/Mexico_City',
         dateStyle: 'full', 
@@ -120,25 +122,26 @@ serve(async (req) => {
       // MODO SILENCIOSO / COPIAS
       let ccList: string[] = [];
 
-      // Manual CCs always receive it
       if (ccEmailsString) {
         const extraMails = ccEmailsString.split(',').map((m: string) => m.trim()).filter((m: string) => m);
         ccList = [...ccList, ...extraMails];
       }
 
       if (record.send_email_notification === false) {
-        console.log("🤫 MODO SILENCIOSO ACTIVO: El cliente no recibirá notificación (solo distribución y copias manuales).");
+        console.log("🤫 MODO SILENCIOSO ACTIVO: El cliente no recibirá notificación.");
       } else {
         console.log("🔊 MODO NORMAL: Se avisará a todos.");
         if (requesterEmail) ccList.push(requesterEmail);
       }
 
-      // Limpia de Arreglo CC: Eliminar duplicados y el mainRecipient
       ccList = [...new Set(ccList)].filter(email => email !== mainRecipient);
       
       console.log(`👥 Correos en copia (CC):`, ccList);
       console.log(`🚀 Enviando correo de lujo a Resend a ${mainRecipient}...`);
       
+      // 🔥 CONSTRUIMOS EL LINK DIRECTO AL TICKET
+      const directTicketUrl = `${frontendUrl}/dashboard?ticket=${record.id}`;
+
       // 🎨 DISEÑO HTML ACTUALIZADO
       const htmlTemplate = `
         <div style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; max-width: 650px; margin: auto; border: 1px solid #E5E7EB; border-radius: 12px; overflow: hidden; background-color: #ffffff;">
@@ -206,10 +209,16 @@ serve(async (req) => {
             </div>
             ` : ''}
 
-            <div style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #E5E7EB;">
+            <!-- 🔥 BOTÓN DE LLAMADO A LA ACCIÓN (CTA) -->
+            <div style="margin: 40px 0 20px 0; text-align: center;">
+              <a href="${directTicketUrl}" target="_blank" style="background-color: #D3002D; color: #ffffff; text-decoration: none; padding: 16px 32px; border-radius: 8px; font-weight: 900; font-size: 14px; text-transform: uppercase; letter-spacing: 1px; display: inline-block; box-shadow: 0 4px 6px rgba(211, 0, 45, 0.25);">
+                VER SOLICITUD EN PLATAFORMA
+              </a>
+            </div>
+
+            <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #E5E7EB;">
               <p style="font-size: 14px; color: #6B7280; line-height: 1.5; margin: 0;">
                 Nuestra mesa de control operativo revisará esta solicitud en breve para asignarla a los especialistas correspondientes. 
-                Recibirás notificaciones en este hilo conforme avance tu proyecto.
               </p>
               <p style="font-size: 14px; color: #111827; font-weight: bold; margin-top: 15px;">
                 Saludos cordiales,<br/>El equipo de Tolko Group.
@@ -253,7 +262,7 @@ serve(async (req) => {
         .from("request_tasks")
         .select(`
           profiles!request_tasks_assigned_to_fkey ( full_name, email ),
-          requests ( title, organizations ( name ) )
+          requests ( id, title, organizations ( name ) )
         `)
         .eq("id", record.id)
         .single();
@@ -263,15 +272,25 @@ serve(async (req) => {
       const reviewerEmail = taskData.profiles?.email;
       const reviewerName = taskData.profiles?.full_name?.split(" ")[0] || "Creador";
       const projectName = taskData.requests?.title || "Sin título";
+      const parentTicketId = taskData.requests?.id;
       const organization = Array.isArray(taskData.requests?.organizations) ? taskData.requests?.organizations[0] : taskData.requests?.organizations;
       const clientName = organization?.name || "Cliente";
+
+      // Link para el colaborador
+      const colabTicketUrl = `${frontendUrl}/dashboard?ticket=${parentTicketId}`;
 
       if (newStatus === "pendiente" && assigneeId && old_record.assigned_to !== assigneeId) {
         await resend.emails.send({
           from: "Pipeline Tolko <no-reply@pipeline.tolkogroup.com>", 
           to: [reviewerEmail],
           subject: `NUEVA ASIGNACIÓN: ${clientName} - ${projectName}`,
-          html: `<div style="font-family: Arial, sans-serif; padding: 20px;"><h2 style="color:#D3002D;">Pipeline Tolko</h2><p>Hola <strong>${reviewerName}</strong>,</p><p>Se te ha asignado una nueva pieza de producción (Disciplina: ${record.discipline}) para la cuenta <strong>${clientName}</strong>.</p></div>`,
+          html: `
+            <div style="font-family: Arial, sans-serif; padding: 20px;">
+              <h2 style="color:#D3002D;">Pipeline Tolko</h2>
+              <p>Hola <strong>${reviewerName}</strong>,</p>
+              <p>Se te ha asignado una nueva pieza de producción (Disciplina: ${record.discipline}) para la cuenta <strong>${clientName}</strong>.</p>
+              <a href="${colabTicketUrl}" style="background-color:#111827; color:#fff; text-decoration:none; padding:10px 20px; border-radius:6px; display:inline-block; margin-top:20px;">IR A LA MESA DE TRABAJO</a>
+            </div>`,
         });
       }
       
@@ -281,7 +300,12 @@ serve(async (req) => {
           from: "Pipeline Tolko <no-reply@pipeline.tolkogroup.com>", 
           to: [coordinatorEmail],
           subject: `ENTREGABLE LISTO: ${clientName} - ${projectName}`,
-          html: `<div style="font-family: Arial, sans-serif; padding: 20px;"><h2 style="color:#10b981;">Mesa de Control</h2><p>El Reviewer <strong>${reviewerName}</strong> ha subido un entregable para la cuenta <strong>${clientName}</strong> (Disciplina: ${record.discipline}).</p></div>`,
+          html: `
+            <div style="font-family: Arial, sans-serif; padding: 20px;">
+              <h2 style="color:#10b981;">Mesa de Control</h2>
+              <p>El Reviewer <strong>${reviewerName}</strong> ha subido un entregable para la cuenta <strong>${clientName}</strong> (Disciplina: ${record.discipline}).</p>
+              <a href="${colabTicketUrl}" style="background-color:#10b981; color:#fff; text-decoration:none; padding:10px 20px; border-radius:6px; display:inline-block; margin-top:20px;">REVISAR ENTREGABLE</a>
+            </div>`,
         });
       }
     }
