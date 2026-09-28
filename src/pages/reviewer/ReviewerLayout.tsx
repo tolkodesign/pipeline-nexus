@@ -5,6 +5,7 @@ import ReviewerSidebar from '../../components/layout/ReviewerSidebar';
 import ReviewerDashboard from '../reviewer/ReviewerDashboard'; 
 import ReviewerDeliveriesPage from '../../pages/reviewer/ReviewerDeliveriesPage'; 
 import ClientSettings from '../../components/client/ClientSettings'; 
+import PressDirectory from '../../components/rp/PressDirectory';
 
 export default function ReviewerLayout() {
   const { profile } = useAuth();
@@ -38,6 +39,7 @@ export default function ReviewerLayout() {
         <Routes>
           <Route path="/" element={<ReviewerDashboard />} />
           <Route path="/entregas" element={<ReviewerDeliveriesPage />} />
+          <Route path="/reporters" element={<PressDirectory />} />
           <Route path="/settings" element={<ClientSettings />} /> 
         </Routes>
       </main>

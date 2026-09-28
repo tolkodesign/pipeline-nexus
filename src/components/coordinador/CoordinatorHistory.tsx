@@ -1,13 +1,13 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../context/AuthContext';
-import { Search, Filter, Loader2, RefreshCw, Calendar, Layers, Hash, Download, BarChart3, CheckSquare, PackagePlus, ChevronLeft, ChevronRight, Eye, RotateCcw, Clock, ArrowUpDown, Trash2, ArchiveRestore } from 'lucide-react';
+import { Search, Filter, Loader2, RefreshCw, Calendar, Layers, Hash, Download, BarChart3, CheckSquare, PackagePlus, ChevronLeft, ChevronRight, Eye, RotateCcw, Clock, ArrowUpDown, Trash2, ArchiveRestore, ShieldCheck } from 'lucide-react';
 import Swal from 'sweetalert2';
 
 import EditRequestModal from '../../components/admin/modals/EditRequestModal';
 
 export default function CoordinatorHistory() {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const [requests, setRequests] = useState<any[]>([]);
   const [clients, setClients] = useState<any[]>([]); 
   const [loading, setLoading] = useState(true);
@@ -392,10 +392,15 @@ export default function CoordinatorHistory() {
   return (
     <div className="space-y-6 animate-in fade-in duration-300 font-sans p-4 md:p-10 w-full max-w-full flex-1 transition-colors min-w-0 overflow-x-hidden">
       
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-gray-200 dark:border-luxury-border pb-4">
-        <div>
-          <h2 className="text-xl font-black tracking-tight text-gray-900 dark:text-white uppercase">Historial de Célula</h2>
-          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Archivo histórico y auditoría analítica de solicitudes entregadas en tus marcas asignadas.</p>
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4 border-b border-gray-200 dark:border-luxury-border pb-4">
+        <div className="min-w-0">
+          <h1 className="text-2xl md:text-3xl font-black text-gray-900 dark:text-white tracking-tight uppercase truncate">
+            Historial <span className="text-luxury-red">Operativo</span>
+          </h1>
+          <p className="text-gray-500 dark:text-gray-400 text-xs mt-1 font-bold flex items-center gap-2 uppercase tracking-wider">
+            <ShieldCheck size={14} className="text-luxury-red shrink-0" />
+            Célula Operativa: <span className="text-luxury-red font-black">{profile?.specialties?.name || profile?.specialty || 'General'}</span>
+          </p>
         </div>
         <div className="flex items-center gap-3 self-end md:self-auto">
           <button onClick={handleExportCSV} className="flex items-center gap-2 text-xs font-black text-white bg-emerald-600 hover:bg-emerald-700 px-4 py-2.5 rounded-xl transition-all shadow-md active:scale-95 cursor-pointer uppercase tracking-wider">

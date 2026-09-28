@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { X, Plus, Trash2, Loader2, Mail, ArrowLeft, UserPlus } from 'lucide-react';
 import { supabase } from '../../../lib/supabase';
+import { NORMALIZED_ROLES } from '../../../lib/identity';
 import { useAuth } from '../../../context/AuthContext';
 import Swal from 'sweetalert2';
 
@@ -13,7 +14,8 @@ interface Props {
 
 export default function ManageDistributionModal({ isOpen, onClose, preselectedOrgId }: Props) {
   const { user, profile } = useAuth();
-  const isAdmin = profile?.is_admin || profile?.internal_role === 'Admin';
+
+  const isAdmin = profile?.normalized_role === NORMALIZED_ROLES.ADMIN;
 
   const [loading, setLoading] = useState(false);
   const [assignments, setAssignments] = useState<any[]>([]);
@@ -61,6 +63,7 @@ export default function ManageDistributionModal({ isOpen, onClose, preselectedOr
         .from('profiles')
         .select('id, full_name, role_id, specialty_id, internal_roles(name), specialties(name)')
         .in('role_id', [2, 4, 5])
+        .eq('is_active', true)
         .eq('is_active', true)
         .order('full_name');
 

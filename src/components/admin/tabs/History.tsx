@@ -4,7 +4,7 @@ import {
   Search, Filter, Loader2, Calendar, Layers, Hash, 
   BarChart3, CheckSquare, PackagePlus, ChevronLeft, 
   ChevronRight, Eye, RotateCcw, Trash2, ArchiveRestore,
-  Building2, User
+  Building2, User, ShieldCheck
 } from 'lucide-react';
 import Swal from 'sweetalert2';
 
@@ -69,31 +69,53 @@ export default function HistoryPage() {
 
   const fetchAllRequests = async () => {
     try {
-      const { data, error } = await supabase
-        .from('requests')
-        .select(`
-          id,
-          title,
-          status,
-          department,
-          due_date,
-          quantity,
-          created_at,
-          request_date,
-          delivered_at,
-          reopened_at,
-          is_active,
-          cancellation_reason,
-          projects ( name ),
-          organizations ( name ),
-          priorities ( level, color_code ),
-          request_categories ( name ),
-          requester:profiles!requests_requester_id_fkey(full_name)
-        `)
-        .order('created_at', { ascending: false });
+      let allRecords: any[] = [];
+      let page = 0;
+      const pageSize = 1000;
+      let keepFetching = true;
 
-      if (error) throw error;
-      if (data) setRequests(data);
+      while (keepFetching) {
+        const { data, error } = await supabase
+          .from('requests')
+          .select(`
+            id,
+            title,
+            status,
+            department,
+            due_date,
+            quantity,
+            created_at,
+            request_date,
+            delivered_at,
+            reopened_at,
+            is_active,
+            cancellation_reason,
+            projects ( name ),
+            organizations ( name ),
+            priorities ( level, color_code ),
+            request_categories ( name ),
+            requester:profiles!requests_requester_id_fkey(full_name)
+          `)
+          .order('created_at', { ascending: false })
+          .range(page * pageSize, (page + 1) * pageSize - 1);
+
+        if (error) {
+          console.error('Error cargando bloque de historial:', error);
+          break;
+        }
+        
+        if (data && data.length > 0) {
+          allRecords = [...allRecords, ...data];
+          if (data.length < pageSize) {
+            keepFetching = false;
+          } else {
+            page++;
+          }
+        } else {
+          keepFetching = false;
+        }
+      }
+      setRequests(allRecords);
     } catch (err) {
       console.error('Error cargando historial:', err);
     }
@@ -321,11 +343,15 @@ export default function HistoryPage() {
   return (
     <div className="space-y-6 animate-in fade-in duration-300 transition-colors duration-300 font-sans">
       
-      {/* HEADER PRINCIPAL (Sin botones extra) */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-gray-200 dark:border-luxury-border pb-4 transition-colors duration-300">
-        <div>
-          <h2 className="text-xl font-black tracking-widest text-gray-900 dark:text-white uppercase transition-colors duration-300">Historial General</h2>
-          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 transition-colors duration-300">Busca en tu historial de solicitudes; si utilizas los filtros, tienes una búsqueda más acertada.</p>
+      {/* HEADER PRINCIPAL */}
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4 border-b border-gray-200 dark:border-luxury-border pb-4 transition-colors duration-300">
+        <div className="min-w-0">
+          <h1 className="text-2xl md:text-3xl font-black text-gray-900 dark:text-white tracking-tight uppercase truncate">
+            Historial <span className="text-luxury-red">General</span>
+          </h1>
+          <p className="text-gray-500 dark:text-gray-400 text-xs mt-1 font-bold flex items-center gap-2 uppercase tracking-wider">
+            <ShieldCheck size={14} className="text-luxury-red shrink-0"/> Auditoría de Solicitudes: <span className="text-luxury-red font-black">Historial Completo</span>
+          </p>
         </div>
       </div>
 

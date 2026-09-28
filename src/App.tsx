@@ -14,6 +14,8 @@ const CoordinatorLayout = lazy(() => import('./pages/Coordinador/CoordinatorLayo
 const ForgotPassword = lazy(() => import('./auth/ForgotPassword'));
 const UpdatePassword = lazy(() => import('./auth/UpdatePassword'));
 
+import { NORMALIZED_ROLES } from './lib/identity';
+
 // 🛡️ CADENERO DE ACCESOS INTELIGENTE
 const ProtectedRoute = ({ children, allowedArea }: { children: any, allowedArea: 'admin' | 'coordinator' | 'colaborador' | 'client' }) => {
   const { user, profile, loading } = useAuth();
@@ -32,36 +34,38 @@ const ProtectedRoute = ({ children, allowedArea }: { children: any, allowedArea:
   // Si no está logueado, lo mandamos al login PERO llevándonos el ticket
   if (!user) return <Navigate to={`/login${searchParams}`} replace />;
 
-  const roleIdNum = Number(profile?.role_id);
-  const isAdminUser = profile?.is_admin || roleIdNum === 3; // 3 es Admin Supremo
+  const role = profile?.normalized_role || NORMALIZED_ROLES.CLIENT;
+  const isAdminUser = role === NORMALIZED_ROLES.ADMIN;
+  const isCoordinatorUser = role === NORMALIZED_ROLES.LIDER || role === NORMALIZED_ROLES.COORDINADOR || role === NORMALIZED_ROLES.EJECUTIVO;
+  const isColaboradorUser = role === NORMALIZED_ROLES.COLABORADOR;
 
   // REINO 1: ADMIN SUPREMO
   if (allowedArea === 'admin') {
     if (isAdminUser) return children;
-    if ([2, 4, 5].includes(roleIdNum)) return <Navigate to={`/coordinator${searchParams}`} replace />;
-    if (roleIdNum === 1) return <Navigate to={`/colaborador${searchParams}`} replace />; 
+    if (isCoordinatorUser) return <Navigate to={`/coordinator${searchParams}`} replace />;
+    if (isColaboradorUser) return <Navigate to={`/colaborador${searchParams}`} replace />; 
     return <Navigate to={`/client${searchParams}`} replace />; 
   }
 
   // REINO 2: JEFATURAS (LÍDERES = 2, COORDINADORES = 4, EJECUTIVOS = 5)
   if (allowedArea === 'coordinator') {
-    if ([2, 4, 5].includes(roleIdNum) || isAdminUser) return children;
-    if (roleIdNum === 1) return <Navigate to={`/colaborador${searchParams}`} replace />; 
+    if (isCoordinatorUser || isAdminUser) return children;
+    if (isColaboradorUser) return <Navigate to={`/colaborador${searchParams}`} replace />; 
     return <Navigate to={`/client${searchParams}`} replace />;
   }
 
   // REINO 3: COLABORADORES
   if (allowedArea === 'colaborador') {
-    if (roleIdNum === 1 || isAdminUser) return children; 
-    if ([2, 4, 5].includes(roleIdNum)) return <Navigate to={`/coordinator${searchParams}`} replace />; 
+    if (isColaboradorUser || isAdminUser) return children; 
+    if (isCoordinatorUser) return <Navigate to={`/coordinator${searchParams}`} replace />; 
     return <Navigate to={`/client${searchParams}`} replace />;
   }
 
   // REINO 4: CLIENTES EXTERNOS
   if (allowedArea === 'client') {
     if (isAdminUser) return <Navigate to={`/admin${searchParams}`} replace />; 
-    if ([2, 4, 5].includes(roleIdNum)) return <Navigate to={`/coordinator${searchParams}`} replace />;
-    if (roleIdNum === 1) return <Navigate to={`/colaborador${searchParams}`} replace />; 
+    if (isCoordinatorUser) return <Navigate to={`/coordinator${searchParams}`} replace />;
+    if (isColaboradorUser) return <Navigate to={`/colaborador${searchParams}`} replace />; 
     return children;
   }
 
@@ -77,13 +81,13 @@ const RootRedirect = () => {
   if (loading) return null;
   if (!user) return <Navigate to={`/login${searchParams}`} replace />;
 
-  const roleIdNum = Number(profile?.role_id);
+  const role = profile?.normalized_role || NORMALIZED_ROLES.CLIENT;
 
-  if (profile?.is_admin || roleIdNum === 3) {
+  if (role === NORMALIZED_ROLES.ADMIN) {
     return <Navigate to={`/admin${searchParams}`} replace />;
-  } else if ([2, 4, 5].includes(roleIdNum)) {
+  } else if (role === NORMALIZED_ROLES.LIDER || role === NORMALIZED_ROLES.COORDINADOR || role === NORMALIZED_ROLES.EJECUTIVO) {
     return <Navigate to={`/coordinator${searchParams}`} replace />;
-  } else if (roleIdNum === 1) {
+  } else if (role === NORMALIZED_ROLES.COLABORADOR) {
     return <Navigate to={`/colaborador${searchParams}`} replace />; 
   } else {
     return <Navigate to={`/client${searchParams}`} replace />;

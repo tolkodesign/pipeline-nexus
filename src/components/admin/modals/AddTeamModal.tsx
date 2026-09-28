@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { X, ShieldCheck, Camera, Upload, Send, Loader2, Lock } from 'lucide-react';
 import Swal from 'sweetalert2';
 import { supabase } from '../../../lib/supabase';
+import { NORMALIZED_ROLES } from '../../../lib/identity';
 import { useAuth } from '../../../context/AuthContext'; 
 
 interface Props {
@@ -12,7 +13,7 @@ interface Props {
 
 export default function AddTeamModal({ isOpen, onClose, onRefresh }: Props) {
   const { profile } = useAuth();
-  const isAdmin = profile?.internal_role === 'Admin';
+  const isAdmin = profile?.normalized_role === NORMALIZED_ROLES.ADMIN;
 
   const [loading, setLoading] = useState(false);
   const [leaders, setLeaders] = useState<any[]>([]);
@@ -43,7 +44,8 @@ export default function AddTeamModal({ isOpen, onClose, onRefresh }: Props) {
     const { data } = await supabase
       .from('profiles')
       .select('id, full_name, role_id, specialty_id, internal_roles(name), specialties(name)') 
-      .in('role_id', [2, 4, 5]); 
+      .in('role_id', [2, 4, 5])
+      .eq('is_active', true); 
       
     if (data) {
       const formatted = data.map((l: any) => {

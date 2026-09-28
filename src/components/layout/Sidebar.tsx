@@ -1,10 +1,11 @@
 import { useState } from 'react';
-import { LayoutGrid, Users, UserCircle, Clock, Settings, LogOut, ShieldCheck, Menu, X, BarChart3, CalendarDays } from 'lucide-react'; 
+import { LayoutGrid, Users, UserCircle, Clock, Settings, LogOut, ShieldCheck, Menu, X, BarChart3, CalendarDays, Newspaper } from 'lucide-react'; 
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import Swal from 'sweetalert2';
 import ThemeToggle from '../ui/ThemeToggle';
 import { useAuth } from '../../context/AuthContext';
+import { canManagePressDirectory } from '../../lib/pressDirectoryAuth';
 
 interface SidebarProps {
   activeTab: string;
@@ -89,7 +90,7 @@ export default function Sidebar({ activeTab, setActiveTab }: SidebarProps) {
               {user?.email || 'admin@tolko.com'}
             </h2>
             <p className="text-[10px] uppercase tracking-[0.3em] text-luxury-red font-bold mt-1 transition-colors duration-300">
-              {profile?.internal_role || 'ADMINISTRADOR'}
+              {profile?.normalized_role || 'ADMINISTRADOR'}
             </p>
           </div>
         </div>
@@ -174,6 +175,19 @@ export default function Sidebar({ activeTab, setActiveTab }: SidebarProps) {
           >
             <Clock size={18}/> Historial
           </button>
+
+          {canManagePressDirectory(profile) && (
+            <button 
+              onClick={() => handleTabClick('prensa')}
+              className={`flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-bold w-full transition-all cursor-pointer ${
+                activeTab === 'prensa' 
+                  ? 'bg-luxury-red text-white shadow-lg shadow-luxury-red/20' 
+                  : 'text-gray-500 hover:text-gray-900 dark:hover:text-white hover:bg-gray-200 dark:hover:bg-white/5'
+              }`}
+            >
+              <Newspaper size={18}/> Prensa
+            </button>
+          )}
 
          
           

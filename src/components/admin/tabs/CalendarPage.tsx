@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../../../lib/supabase';
+import { NORMALIZED_ROLES } from '../../../lib/identity';
 import { useAuth } from '../../../context/AuthContext';
 import { 
   ChevronLeft, ChevronRight, Calendar as CalendarIcon, 
@@ -40,8 +41,7 @@ export default function CalendarPage() {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const roleName = (profile?.internal_roles?.name || profile?.internal_role || '').toLowerCase();
-      const isAdmin = profile?.is_admin || profile?.role_id === 1 || roleName === 'admin';
+      const isAdmin = profile?.normalized_role === NORMALIZED_ROLES.ADMIN;
 
       let requestQuery = supabase
         .from('requests')
@@ -134,8 +134,8 @@ export default function CalendarPage() {
   // 🔥 LÓGICA DE FILTRADO MASTER CON DISCRIMINACIÓN POR ÁREA 🔥
   const filteredRequests = useMemo(() => {
     const todayStr = new Date().toISOString().split('T')[0];
-    const roleName = (profile?.internal_roles?.name || profile?.internal_role || '').toLowerCase();
-    const isAdmin = profile?.is_admin || profile?.role_id === 1 || roleName === 'admin';
+    
+    const isAdmin = profile?.normalized_role === NORMALIZED_ROLES.ADMIN;
 
     return requests.filter(req => {
       if (!req.due_date) return false;

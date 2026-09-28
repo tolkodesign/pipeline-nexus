@@ -793,9 +793,10 @@ export default function EditRequestModal({
   });
 
   const normalizedStaffCatalog = staffCatalog.map(s => {
-    const spec = (s.specialty || '').toLowerCase().trim();
+    const specName = s.specialties?.name || s.specialty || '';
+    const spec = specName.toLowerCase().trim();
     if (spec === 'relaciones públicas' || spec === 'relaciones publicas') { return { ...s, specialty: 'RP' }; }
-    return s;
+    return { ...s, specialty: specName };
   });
 
   const finalLogoUrl = orgDetails?.logo_url || request?.organizations?.logo_url;

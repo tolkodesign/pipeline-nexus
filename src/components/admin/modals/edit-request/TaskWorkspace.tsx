@@ -1,6 +1,7 @@
 import { Lock, MessageSquarePlus, ExternalLink, Loader2, CheckCircle, UploadCloud, Trash2, ShieldAlert, Calendar, Package, Check, Plus, Minus, Video } from 'lucide-react';
 import Swal from 'sweetalert2';
-import { supabase } from '../../../../lib/supabase'; 
+import { supabase } from '../../../../lib/supabase';
+import { getNormalizedRole, NORMALIZED_ROLES } from '../../../../lib/identity'; 
 
 interface TaskWorkspaceProps {
   catalog: any[];
@@ -713,11 +714,11 @@ export default function TaskWorkspace({
               <select value="" onChange={e => handleAddAssignee(e.target.value)} className="bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-500/20 rounded-lg px-2 py-1 text-[10px] font-bold outline-none cursor-pointer">
                 <option value="">+ Añadir Colaborador...</option>
                 {staffCatalog.filter(s => {
-                  const roleName = (s.internal_roles?.name || '').toLowerCase();
-                  const isAdminRole = s.role_id === 3 || roleName.includes('admin') || s.is_admin === true;
+                  const normalizedRole = getNormalizedRole(s.role_id);
+                  const isAdminRole = normalizedRole === NORMALIZED_ROLES.ADMIN;
                   if (isAdminRole) return false;
 
-                  const staffSpecCanonical = getCanonicalDiscipline(s.specialty || s.specialties?.name || '');
+                  const staffSpecCanonical = getCanonicalDiscipline(s.specialties?.name || s.specialty || '');
                   return staffSpecCanonical === activeTabCanonical && !assigneesDetails.find(a => a.profile_id === s.id);
                 }).map(staff => (
                   <option key={staff.id} value={staff.id}>{staff.full_name}</option>

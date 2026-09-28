@@ -272,31 +272,58 @@ export default function TeamPage() {
   }, [isModalOpen, teamToEdit, teamFilter]);
 
   const fetchTeam = async () => {
-    // 🔥 SOLUCIÓN: JOIN RELACIONAL DIRECTO EN SUPABASE CON LÍMITE ALTO 🔥
-    // Esto evita que Supabase "corte" las consultas a 1000 filas y nos esconda datos.
-    const [teamRes, assigneesRes] = await Promise.all([
+    const fetchAllAssignees = async () => {
+      let allRecords: any[] = [];
+      let page = 0;
+      const pageSize = 1000;
+      let keepFetching = true;
+
+      while (keepFetching) {
+        const { data, error } = await supabase
+          .from('task_assignees')
+          .select(`
+            profile_id, task_id, assigned_quantity, assigned_items, status, created_at,
+            request_tasks (
+              id, request_id, quantity, created_at, discipline, status,
+              requests ( quantity, items_breakdown )
+            )
+          `)
+          .order('created_at', { ascending: false })
+          .range(page * pageSize, (page + 1) * pageSize - 1);
+
+        if (error) {
+          console.error("Error cargando bloque de task_assignees:", error);
+          break;
+        }
+
+        if (data && data.length > 0) {
+          allRecords = [...allRecords, ...data];
+          if (data.length < pageSize) {
+            keepFetching = false;
+          } else {
+            page++;
+          }
+        } else {
+          keepFetching = false;
+        }
+      }
+      return allRecords;
+    };
+
+    const [teamRes, assigneesData] = await Promise.all([
       supabase
         .from('profiles')
         .select(`*, organization_members ( organizations ( name ) ), internal_roles(name), specialties(name)`)
         .not('role_id', 'is', null) 
         .eq('is_active', teamFilter === 'activos')
         .order('created_at', { ascending: false }),
-      supabase
-        .from('task_assignees')
-        .select(`
-          profile_id, task_id, assigned_quantity, assigned_items, status, created_at,
-          request_tasks (
-            id, request_id, quantity, created_at, discipline, status,
-            requests ( quantity, items_breakdown )
-          )
-        `)
-        .limit(15000)
+      fetchAllAssignees()
     ]);
 
     if (teamRes.error) return;
 
     // Mapeo seguro con la información completa
-    const processedTasks = (assigneesRes.data || []).map((p: any) => {
+    const processedTasks = (assigneesData || []).map((p: any) => {
       const task = Array.isArray(p.request_tasks) ? p.request_tasks[0] : p.request_tasks;
       if (!task) return null;
 
@@ -353,7 +380,7 @@ export default function TeamPage() {
       
       if(['pendiente', 'en_proceso', 'con_correcciones'].includes(t.status)) {
           profileMetrics[t.profile_id].active_pieces += t.qty;
-      } else if (['entregado', 'aprobado_interno', 'aprobado', 'completado'].includes(t.status)) {
+      } else if (['aprobado_interno'].includes(t.status)) {
           profileMetrics[t.profile_id].delivered_pieces += t.qty;
       }
     });
@@ -397,7 +424,7 @@ export default function TeamPage() {
       const memberTasks = rawTasks.filter((task: any) => {
         if (task.profile_id !== member.id || !task.created_at) return false;
         
-        const isCompleted = ['entregado', 'aprobado_interno', 'aprobado', 'completado'].includes(task.status);
+        const isCompleted = ['aprobado_interno'].includes(task.status);
         const isInProcess = ['pendiente', 'en_proceso', 'con_correcciones'].includes(task.status);
         
         if (chartStatusFilter === 'completadas' && !isCompleted) return false;

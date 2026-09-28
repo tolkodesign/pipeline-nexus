@@ -1,23 +1,15 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-
-// 🔥 DICCIONARIO INFALIBLE PARA TRADUCIR EL ID NUMÉRICO
-const ROLES_MAP: Record<number, string> = {
-  1: 'Reviewer', // O Colaborador
-  2: 'Lider',
-  3: 'Admin',
-  4: 'Coordinador',
-  5: 'Ejecutivo de Comunicación'
-};
+import { getNormalizedRole } from '../lib/identity';
+import type { NormalizedRole } from '../lib/identity';
 
 export function useUserRole() {
-  const [role, setRole] = useState<string | null>(null);
+  const [role, setRole] = useState<NormalizedRole | string | null>(null);
   const [loadingRole, setLoadingRole] = useState(true);
 
   useEffect(() => {
     const fetchRole = async () => {
       try {
-        // 1. Vemos quién carajos está logueado en Supabase Auth
         const { data: { user } } = await supabase.auth.getUser();
         
         if (!user) {
@@ -25,22 +17,21 @@ export function useUserRole() {
           return;
         }
 
-        // 2. 🔥 CORRECCIÓN: Pedimos el role_id numérico (y el viejo por si las moscas)
         const { data, error } = await supabase
           .from('profiles')
-          .select('role_id, internal_role')
+          .select('role_id, internal_role') // Mantenemos pedir internal_role por retrocompatibilidad con componentes como Team.tsx que esperan un string capitalizado legacy temporalmente si es necesario, aunque aquí usaremos la fuente de verdad.
           .eq('id', user.id)
           .single();
 
         if (error) throw error;
         
-        // 3. 🔥 TRADUCCIÓN MÁGICA: Le damos prioridad al número, si no existe usa el texto viejo, si no, es Lector.
-        const mappedRole = data?.role_id ? ROLES_MAP[data.role_id] : data?.internal_role;
-        
-        setRole(mappedRole || 'Lector');
+        // FASE 2B: Usamos la nueva fuente de verdad basada única y exclusivamente en role_id.
+        // Ojo: algunos componentes (como Team.tsx) esperan "Admin", y NORMALIZED_ROLES.ADMIN es "Admin".
+        // Mapea perfectamente según el nuevo contrato.
+        setRole(getNormalizedRole(data?.role_id));
       } catch (error) {
         console.error('Error sacando el rol:', error);
-        setRole('Lector');
+        setRole('Cliente'); // Fallback seguro
       } finally {
         setLoadingRole(false);
       }

@@ -1,4 +1,5 @@
 import { Mail, Phone, Trash2, Edit2, RotateCcw, FolderKanban, ShieldCheck, Shield } from 'lucide-react';
+import { getNormalizedRole, NORMALIZED_ROLES } from '../../../lib/identity';
 
 interface TeamCardProps {
   member: any;
@@ -11,12 +12,14 @@ interface TeamCardProps {
 }
 
 export default function TeamCard({ member, onEdit, onDelete, onRestore, onViewTasks, isHistorial, isAdminUser }: TeamCardProps) {
-  const isAdmin = member.internal_role?.toLowerCase() === 'admin';
 
-  // Transformación dinámica de Reviewer a Colaborador
-  const displayRole = member.internal_role?.toLowerCase() === 'reviewer' 
-    ? 'Colaborador' 
-    : member.internal_role;
+  const normalizedRole = getNormalizedRole(member.role_id);
+  const isAdmin = normalizedRole === NORMALIZED_ROLES.ADMIN;
+
+  
+  const displayRole = normalizedRole;
+     
+    
 
   return (
     <div className="bg-white dark:bg-[#1A1A21] border border-gray-200 dark:border-luxury-border p-6 rounded-2xl shadow-sm dark:shadow-none transition-all duration-300 group relative flex flex-col h-full min-w-0">

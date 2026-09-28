@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { LogIn, Mail, Lock, Eye, EyeOff, Loader2 } from 'lucide-react'; 
 import Swal from 'sweetalert2';
+import { getNormalizedRole, NORMALIZED_ROLES } from '../lib/identity';
 
 const logoUrl = "https://mcusercontent.com/f8003344e5055720b1568282f/images/e84ab177-5143-b5b7-4514-9298f1f3fa99.png";
 
@@ -41,13 +42,12 @@ export default function Login() {
       return;
     }
 
-    const roleText = (profile.internal_role || '').toLowerCase().trim();
-    const roleIdNum = Number(profile.role_id); 
+    const role = getNormalizedRole(profile.role_id);
 
-    // 🔥 AHORA SÍ: SEPARACIÓN EXACTA DE REINOS
-    const isAdminUser = profile.is_admin === true || roleIdNum === 3 || ['admin'].includes(roleText);
-    const isJefatura = [2, 4, 5].includes(roleIdNum) || ['lider', 'líder', 'coordinador', 'ejecutivo', 'ejecutivo de comunicación'].includes(roleText);
-    const isColaborador = roleIdNum === 1 || ['colaborador', 'reviewer'].includes(roleText);
+    // 🔥 AHORA SÍ: SEPARACIÓN EXACTA DE REINOS POR IDENTIDAD OFICIAL
+    const isAdminUser = role === NORMALIZED_ROLES.ADMIN;
+    const isJefatura = role === NORMALIZED_ROLES.LIDER || role === NORMALIZED_ROLES.COORDINADOR || role === NORMALIZED_ROLES.EJECUTIVO;
+    const isColaborador = role === NORMALIZED_ROLES.COLABORADOR;
 
     // 🔥 RUTEO PERFECTO DESDE EL LOGIN
     if (isAdminUser) {

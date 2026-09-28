@@ -8,6 +8,8 @@ import {
 import { supabase } from '../../lib/supabase';
 import Swal from 'sweetalert2';
 import ThemeToggle from '../ui/ThemeToggle';
+import { canManagePressDirectory } from '../../lib/pressDirectoryAuth';
+import { Newspaper } from 'lucide-react';
 
 interface Props {
   profile: any;
@@ -21,7 +23,7 @@ export default function CoordinatorSidebar({ profile }: Props) {
   const [isOpen, setIsOpen] = useState(false);
 
   const leaderSpecialty = profile?.specialties?.name || profile?.specialty || 'Diseño';
-  const userRole = profile?.internal_roles?.name || profile?.internal_role || 'Líder';
+  const userRole = profile?.normalized_role || 'Líder';
 
   const menuItems = [
     { icon: <LayoutDashboard size={18} />, label: 'Dashboard', path: '/coordinator' },
@@ -31,6 +33,7 @@ export default function CoordinatorSidebar({ profile }: Props) {
     { icon: <CheckSquare size={18} />, label: 'Mis Tareas', path: '/coordinator/my-tasks' },
     { icon: <History size={18} />, label: 'Historial', path: '/coordinator/history' }, 
     { icon: <BarChart3 size={18} />, label: 'Reportes', path: '/coordinator/reports' }, 
+    ...(canManagePressDirectory(profile) ? [{ icon: <Newspaper size={18} />, label: 'Prensa', path: '/coordinator/reporters' }] : []),
     { icon: <Settings size={18} />, label: 'Configuración', path: '/coordinator/settings' },
   ];
 

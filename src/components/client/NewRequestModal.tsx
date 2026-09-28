@@ -182,7 +182,7 @@ export default function NewRequestModal({ isOpen, onClose, organizationId, isAdm
         `).eq('organization_id', orgId).eq('is_active', true).order('created_at', { ascending: false }),
         supabase.from('organizations').select('primary_color, banner_url').eq('id', orgId).single(),
         supabase.from('specialties').select('id, name'),
-        supabase.from('profiles').select('id, full_name, role_id, is_admin, specialty, specialty_id, internal_roles(name), specialties(name)').not('role_id', 'is', null)
+        supabase.from('profiles').select('id, full_name, role_id, is_admin, specialty, specialty_id, internal_roles(name), specialties(name)').not('role_id', 'is', null).eq('is_active', true)
       ]);
 
       if (catsRes.data) setCategories(catsRes.data);
@@ -616,9 +616,10 @@ export default function NewRequestModal({ isOpen, onClose, organizationId, isAdm
   };
 
   const normalizedStaffCatalog = staffList.map(s => {
-    const spec = (s.specialty || '').toLowerCase().trim();
+    const specName = s.specialties?.name || s.specialty || '';
+    const spec = specName.toLowerCase().trim();
     if (spec === 'relaciones públicas' || spec === 'relaciones publicas') { return { ...s, specialty: 'RP' }; }
-    return s;
+    return { ...s, specialty: specName };
   });
 
   // FILTRADO DE ENTREGABLES PARA EL DESPLEGABLE PERSONALIZADO
@@ -1056,7 +1057,7 @@ export default function NewRequestModal({ isOpen, onClose, organizationId, isAdm
                     staffCatalog={normalizedStaffCatalog} 
                     profile={profile} 
                     mySpecialty={null} 
-                    isAdmin={true} 
+                    isAdmin={profile?.normalized_role === 'Admin' || profile?.role_id === 3 || profile?.internal_role === 'Admin' || profile?.is_admin === true} 
                     isJefatura={true}
                     isCollaboratorView={false}
                     isCancelled={false}

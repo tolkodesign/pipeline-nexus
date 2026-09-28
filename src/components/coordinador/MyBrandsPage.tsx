@@ -9,7 +9,7 @@ import { useAuth } from '../../context/AuthContext';
 import AddManagerModal from '../../components/admin/modals/AddManagerModal';
 import EditManagerModal from '../../components/admin/modals/EditManagerModal';
 import DeliverablesManagerModal from '../../components/admin/modals/DeliverablesManagerModal';
-import EditRequestModal from '../../components/admin/modals/EditRequestModal'; // ðŸ”¥ IMPORT DEL MODAL DE EDICIÃ“N Y ASIGNACIÃ“N
+import EditRequestModal from '../../components/admin/modals/EditRequestModal'; // 🔥 IMPORT DEL MODAL DE EDICIÓN Y ASIGNACIÓN
 import ManagerCard from '../../components/admin/ui/ManagerCard';
 import ManagerListRow from '../../components/admin/ui/ManagerListRow';
 import Swal from 'sweetalert2';
@@ -22,7 +22,7 @@ export default function MyBrandsPage() {
   const [orgMembersMap, setOrgMembersMap] = useState<any[]>([]);
   const [activeRequestsMap, setActiveRequestsMap] = useState<Record<string, number>>({});
   
-  // Marca Seleccionada y MÃ³dulo Activo ('overview' es el Bento Grid)
+  // Marca Seleccionada y Módulo Activo ('overview' es el Bento Grid)
   const [activeBrandId, setActiveBrandId] = useState<string | null>(null);
   const [activeSection, setActiveSection] = useState<'overview' | 'pipeline' | 'managers' | 'deliverables' | 'lookAndFeel'>('overview');
 
@@ -40,7 +40,7 @@ export default function MyBrandsPage() {
   
   const [isDeliverablesManagerOpen, setIsDeliverablesManagerOpen] = useState(false);
 
-  // ðŸ”¥ ESTADOS PARA MODAL DE EDICIÃ“N Y ASIGNACIÃ“N DE SOLICITUD
+  // 🔥 ESTADOS PARA MODAL DE EDICIÓN Y ASIGNACIÓN DE SOLICITUD
   const [selectedRequest, setSelectedRequest] = useState<any | null>(null);
   const [staffCatalog, setStaffCatalog] = useState<any[]>([]);
   const [prioritiesCatalog, setPrioritiesCatalog] = useState<any[]>([]);
@@ -61,11 +61,11 @@ export default function MyBrandsPage() {
   const [requestStatusFilter, setRequestStatusFilter] = useState('activos');
   const [specialtiesCatalog, setSpecialtiesCatalog] = useState<any[]>([]);
 
-  // PaginaciÃ³n de Solicitudes
+  // Paginación de Solicitudes
   const [requestsCurrentPage, setRequestsCurrentPage] = useState(1);
   const [requestsPerPage, setRequestsPerPage] = useState(6);
 
-  const leaderSpecialty = profile?.specialties?.name || profile?.specialty || 'DiseÃ±o';
+  const leaderSpecialty = profile?.specialties?.name || profile?.specialty || 'Diseño';
 
   useEffect(() => {
     if (user?.id) {
@@ -110,7 +110,7 @@ export default function MyBrandsPage() {
       if (prioritiesRes.data) setPrioritiesCatalog(prioritiesRes.data);
       if (specsRes.data) setSpecialtiesCatalog(specsRes.data);
     } catch (err) {
-      console.error('Error cargando catÃ¡logos:', err);
+      console.error('Error cargando catálogos:', err);
     }
   };
 
@@ -193,30 +193,7 @@ export default function MyBrandsPage() {
     }
   };
 
-  const fetchBrandDeliverables = async (orgId: string) => {
-    setLoadingDeliverables(true);
-    try {
-      const { data, error } = await supabase
-        .from('organization_deliverables')
-        .select(`
-          *,
-          request_categories(name),
-          file_extensions:target_format_id(extension)
-        `)
-        .eq('organization_id', orgId)
-        .eq('is_active', true)
-        .order('name');
-
-      if (error) throw error;
-      setBrandDeliverables(data || []);
-    } catch (err) {
-      console.error("Error cargando entregables de la marca:", err);
-    } finally {
-      setLoadingDeliverables(false);
-    }
-  };
-
-  // ðŸ”¥ MAPPING Y CARGA DE DETALLE COMPLETO AL HACER CLIC EN UN TICKET
+  // 🔥 MAPPING Y CARGA DE DETALLE COMPLETO AL HACER CLIC EN UN TICKET
   const handleOpenRequestModal = async (req: any) => {
     try {
       const { data, error } = await supabase
@@ -244,7 +221,7 @@ export default function MyBrandsPage() {
     }
   };
 
-  /* ================= CREACIÃ“N RÃPIDA DE SOLICITUD PRELLENADA ================= */
+  /* ================= CREACIÓN RÃPIDA DE SOLICITUD PRELLENADA ================= */
   const handleSaveNewRequest = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!activeBrandId || !requestForm.title) return;
@@ -264,7 +241,7 @@ export default function MyBrandsPage() {
       if (error) throw error;
 
       Swal.fire({
-        title: 'Â¡Solicitud Registrada!',
+        title: '¡Solicitud Registrada!',
         text: `La solicitud fue vinculada a ${currentSelectedBrand?.name}.`,
         icon: 'success',
         confirmButtonColor: '#D3002D'
@@ -282,8 +259,8 @@ export default function MyBrandsPage() {
 
   const handleRemoveRepresentative = async (orgId: string, profId: string, name: string) => {
     const result = await Swal.fire({
-      title: 'Â¿Quitar representante?',
-      text: `RemoverÃ¡s a ${name} de la gestiÃ³n directa de esta cuenta corporativa.`,
+      title: '¿Quitar representante?',
+      text: `Removerás a ${name} de la gestión directa de esta cuenta corporativa.`,
       icon: 'warning',
       showCancelButton: true,
       confirmButtonColor: '#D3002D',
@@ -304,7 +281,7 @@ export default function MyBrandsPage() {
       
       Swal.fire({
         title: 'Removido',
-        text: 'El representante fue desvinculado con Ã©xito.',
+        text: 'El representante fue desvinculado con éxito.',
         icon: 'success',
         confirmButtonColor: '#D3002D'
       });
@@ -349,7 +326,7 @@ export default function MyBrandsPage() {
     return matchesSearch && matchesStatus;
   });
 
-  // PaginaciÃ³n
+  // Paginación
   const totalRequestPages = Math.ceil(filteredRequests.length / requestsPerPage) || 1;
   const reqStartIndex = (requestsCurrentPage - 1) * requestsPerPage;
   const reqEndIndex = reqStartIndex + requestsPerPage;
@@ -385,7 +362,7 @@ export default function MyBrandsPage() {
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-luxury-dark text-gray-900 dark:text-gray-200 pb-12 space-y-8 font-sans w-full max-w-full flex-1 transition-colors duration-300 min-w-0 overflow-x-hidden">
       
-      {/* HEADER DE LA SECCIÃ“N */}
+      {/* HEADER DE LA SECCIÓN */}
       <div className="px-4 sm:px-6 md:px-10 pt-6 md:pt-10 w-full">
         <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4 w-full">
           <div className="w-full min-w-0 flex items-center gap-3">
@@ -412,7 +389,7 @@ export default function MyBrandsPage() {
                 )}
               </h1>
               <p className="text-gray-500 dark:text-gray-400 text-xs mt-1 font-bold flex items-center gap-2 uppercase tracking-wider">
-                <ShieldCheck size={14} className="text-luxury-red shrink-0"/> CÃ©lula Operativa: <span className="text-luxury-red font-black">{leaderSpecialty}</span>
+                <ShieldCheck size={14} className="text-luxury-red shrink-0"/> Célula Operativa: <span className="text-luxury-red font-black">{leaderSpecialty}</span>
               </p>
             </div>
           </div>
@@ -425,7 +402,7 @@ export default function MyBrandsPage() {
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 animate-in fade-in zoom-in-95 duration-200">
             {clients.length === 0 ? (
               <div className="col-span-full border border-dashed border-gray-200 dark:border-white/[0.06] rounded-2xl p-16 text-center bg-white dark:bg-luxury-card">
-                <p className="text-xs text-gray-400 font-bold uppercase tracking-wider">No tienes cuentas asignadas en tu lista de distribuciÃ³n.</p>
+                <p className="text-xs text-gray-400 font-bold uppercase tracking-wider">No tienes cuentas asignadas en tu lista de distribución.</p>
               </div>
             ) : (
               clients.map(client => {
@@ -470,7 +447,7 @@ export default function MyBrandsPage() {
                         {client.name}
                       </h4>
                       <p className="text-[10px] text-gray-500 dark:text-gray-400 font-bold uppercase tracking-widest mt-1 opacity-80 group-hover:opacity-100 transition-opacity flex items-center gap-1">
-                        Abrir Centro de Mando â†’
+                        Abrir Centro de Mando →
                       </p>
                     </div>
                   </div>
@@ -537,7 +514,7 @@ export default function MyBrandsPage() {
               </div>
             </div>
 
-            {/* BOTÃ“N REGRESO AL BENTO SI ESTÃS DENTRO DE UN MÃ“DULO */}
+            {/* BOTÓN REGRESO AL BENTO SI ESTÃS DENTRO DE UN MÃ“DULO */}
             {activeSection !== 'overview' && (
               <div className="flex items-center justify-between bg-white dark:bg-[#0F0F12] border border-gray-200 dark:border-white/[0.06] p-4 rounded-2xl">
                 <button
@@ -547,7 +524,7 @@ export default function MyBrandsPage() {
                   <ArrowLeft size={16} /> Volver a las tarjetas del Bento Grid
                 </button>
                 <span className="text-xs font-black uppercase text-gray-400">
-                  MÃ³dulo Seleccionado: <span className="text-gray-900 dark:text-white">{activeSection.toUpperCase()}</span>
+                  Módulo Seleccionado: <span className="text-gray-900 dark:text-white">{activeSection.toUpperCase()}</span>
                 </span>
               </div>
             )}
@@ -567,7 +544,7 @@ export default function MyBrandsPage() {
                         <FileText size={24} strokeWidth={2.5}/>
                       </div>
                       <div>
-                        <p className="text-[10px] uppercase font-black tracking-widest text-gray-400">MÃ³dulo Principal</p>
+                        <p className="text-[10px] uppercase font-black tracking-widest text-gray-400">Módulo Principal</p>
                         <h3 className="text-sm font-black uppercase text-gray-900 dark:text-white">Solicitudes & Pipeline</h3>
                       </div>
                     </div>
@@ -621,7 +598,7 @@ export default function MyBrandsPage() {
                     <ArrowRight size={16} className="text-gray-400 group-hover:text-luxury-red group-hover:translate-x-1 transition-all"/>
                   </div>
                   <div>
-                    <p className="text-[10px] uppercase font-black tracking-widest text-gray-400">CatÃ¡logo de Entregables</p>
+                    <p className="text-[10px] uppercase font-black tracking-widest text-gray-400">Catálogo de Entregables</p>
                     <p className="text-xl font-black text-gray-900 dark:text-white mt-0.5">
                       {brandDeliverables.length} <span className="text-xs text-gray-400 font-bold normal-case">Entregables</span>
                     </p>
@@ -717,14 +694,14 @@ export default function MyBrandsPage() {
                               <ExternalLink size={13} className="opacity-0 group-hover:opacity-100 transition-opacity text-luxury-red shrink-0" />
                             </h4>
                             <p className="text-xxs text-gray-400 font-bold uppercase mt-0.5">
-                              Solicitante: {req.profiles?.full_name || 'Cliente'} â€¢ Fecha: {new Date(req.created_at).toLocaleDateString('es-MX')}
+                              Solicitante: {req.profiles?.full_name || 'Cliente'} • Fecha: {new Date(req.created_at).toLocaleDateString('es-MX')}
                             </p>
                           </div>
 
                           <div className="flex items-center gap-3 shrink-0">
                             {req.due_date && (
                               <span className="text-[10px] font-black text-luxury-red bg-red-50 dark:bg-red-500/10 px-2.5 py-1 rounded-lg border border-red-200 dark:border-red-500/20 flex items-center gap-1">
-                                <Calendar size={11} /> LÃ­mite: {new Date(req.due_date).toLocaleDateString('es-MX')}
+                                <Calendar size={11} /> Límite: {new Date(req.due_date).toLocaleDateString('es-MX')}
                               </span>
                             )}
                           </div>
@@ -852,15 +829,15 @@ export default function MyBrandsPage() {
               <div className="space-y-4 animate-in fade-in duration-200">
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white dark:bg-[#0F0F12] border border-gray-200 dark:border-white/[0.06] p-5 rounded-2xl">
                   <div>
-                    <h3 className="text-sm font-black uppercase text-gray-900 dark:text-white">CatÃ¡logo de Entregables Autorizados</h3>
-                    <p className="text-xxs text-gray-400 font-medium mt-0.5">Formatos disponibles para producciÃ³n en {currentSelectedBrand?.name}</p>
+                    <h3 className="text-sm font-black uppercase text-gray-900 dark:text-white">Catálogo de Entregables Autorizados</h3>
+                    <p className="text-xxs text-gray-400 font-medium mt-0.5">Formatos disponibles para producción en {currentSelectedBrand?.name}</p>
                   </div>
 
                   <button
                     onClick={() => setIsDeliverablesManagerOpen(true)}
                     className="bg-luxury-red hover:bg-red-700 text-white text-xs font-black px-5 py-3 rounded-xl flex items-center gap-2 uppercase cursor-pointer shadow-lg shadow-luxury-red/20 active:scale-95"
                   >
-                    <Settings size={15}/> Administrar CatÃ¡logo de Entregables
+                    <Settings size={15}/> Administrar Catálogo de Entregables
                   </button>
                 </div>
 
@@ -876,7 +853,7 @@ export default function MyBrandsPage() {
                       <div key={item.id} className="bg-white dark:bg-[#0F0F12] border border-gray-200 dark:border-white/[0.06] p-5 rounded-2xl space-y-3 hover:border-luxury-red/40 transition-all shadow-sm">
                         <div className="flex justify-between items-start gap-2">
                           <span className="text-[9px] font-black uppercase text-luxury-red bg-luxury-red/10 border border-luxury-red/20 px-2.5 py-0.5 rounded">
-                            {item.request_categories?.name || 'CategorÃ­a Standard'}
+                            {item.request_categories?.name || 'Categoría Standard'}
                           </span>
                           {item.is_package && (
                             <span className="text-[9px] font-black uppercase text-purple-400 bg-purple-500/10 border border-purple-500/20 px-2 py-0.5 rounded">
@@ -906,7 +883,7 @@ export default function MyBrandsPage() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-in fade-in duration-200">
                 <div className="bg-white dark:bg-[#0F0F12] border border-gray-200 dark:border-white/[0.06] p-6 rounded-3xl space-y-4">
                   <h3 className="text-sm font-black uppercase text-gray-900 dark:text-white flex items-center gap-2">
-                    <Palette size={16} className="text-luxury-red"/> Paleta CromÃ¡tica
+                    <Palette size={16} className="text-luxury-red"/> Paleta Cromática
                   </h3>
                   
                   <div className="grid grid-cols-2 gap-4 pt-2">
@@ -930,7 +907,7 @@ export default function MyBrandsPage() {
 
                 <div className="bg-white dark:bg-[#0F0F12] border border-gray-200 dark:border-white/[0.06] p-6 rounded-3xl space-y-4">
                   <h3 className="text-sm font-black uppercase text-gray-900 dark:text-white flex items-center gap-2">
-                    <Sparkles size={16} className="text-luxury-red"/> Ficha TÃ©cnica de Marca
+                    <Sparkles size={16} className="text-luxury-red"/> Ficha Técnica de Marca
                   </h3>
 
                   <div className="space-y-3 text-xs">
@@ -940,7 +917,7 @@ export default function MyBrandsPage() {
                     </div>
 
                     <div className="p-3 bg-gray-50 dark:bg-white/5 rounded-xl flex justify-between items-center">
-                      <span className="text-gray-400 font-bold uppercase text-[10px]">Estatus de OperaciÃ³n</span>
+                      <span className="text-gray-400 font-bold uppercase text-[10px]">Estatus de Operación</span>
                       <span className="font-black text-green-500 uppercase text-[10px] px-2 py-0.5 rounded bg-green-500/10">Activa en Tolko</span>
                     </div>
                   </div>
@@ -973,13 +950,13 @@ export default function MyBrandsPage() {
               </div>
 
               <div className="space-y-1">
-                <label className="text-[10px] font-bold text-gray-400 uppercase">TÃ­tulo de la Solicitud *</label>
-                <input required type="text" placeholder="Ej: CampaÃ±a de Redes Septiembre" value={requestForm.title} onChange={e => setRequestForm({...requestForm, title: e.target.value})} className="w-full bg-gray-50 dark:bg-[#050505] border border-gray-200 dark:border-white/10 rounded-xl p-3 text-xs font-bold text-gray-900 dark:text-white outline-none focus:border-luxury-red" />
+                <label className="text-[10px] font-bold text-gray-400 uppercase">Título de la Solicitud *</label>
+                <input required type="text" placeholder="Ej: Campaña de Redes Septiembre" value={requestForm.title} onChange={e => setRequestForm({...requestForm, title: e.target.value})} className="w-full bg-gray-50 dark:bg-[#050505] border border-gray-200 dark:border-white/10 rounded-xl p-3 text-xs font-bold text-gray-900 dark:text-white outline-none focus:border-luxury-red" />
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
-                  <label className="text-[10px] font-bold text-gray-400 uppercase">CategorÃ­a</label>
+                  <label className="text-[10px] font-bold text-gray-400 uppercase">Categoría</label>
                   <select value={requestForm.category_id} onChange={e => setRequestForm({...requestForm, category_id: e.target.value})} className="w-full bg-gray-50 dark:bg-[#050505] border border-gray-200 dark:border-white/10 rounded-xl p-3 text-xs font-bold text-gray-900 dark:text-white outline-none focus:border-luxury-red cursor-pointer">
                     <option value="">Seleccionar...</option>
                     {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
@@ -987,13 +964,13 @@ export default function MyBrandsPage() {
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-[10px] font-bold text-gray-400 uppercase">Fecha LÃ­mite</label>
+                  <label className="text-[10px] font-bold text-gray-400 uppercase">Fecha Límite</label>
                   <input type="date" value={requestForm.due_date} onChange={e => setRequestForm({...requestForm, due_date: e.target.value})} className="w-full bg-gray-50 dark:bg-[#050505] border border-gray-200 dark:border-white/10 rounded-xl p-3 text-xs font-bold text-gray-900 dark:text-white outline-none focus:border-luxury-red cursor-pointer" />
                 </div>
               </div>
 
               <div className="space-y-1">
-                <label className="text-[10px] font-bold text-gray-400 uppercase">DescripciÃ³n o Brief</label>
+                <label className="text-[10px] font-bold text-gray-400 uppercase">Descripción o Brief</label>
                 <textarea rows={3} placeholder="Detalles de la solicitud..." value={requestForm.description} onChange={e => setRequestForm({...requestForm, description: e.target.value})} className="w-full bg-gray-50 dark:bg-[#050505] border border-gray-200 dark:border-white/10 rounded-xl p-3 text-xs font-medium text-gray-900 dark:text-white outline-none focus:border-luxury-red" />
               </div>
             </div>
@@ -1038,7 +1015,7 @@ export default function MyBrandsPage() {
         />
       )}
 
-      {/* ðŸ”¥ MODAL DE EDICIÃ“N Y ASIGNACIÃ“N DE SOLICITUD */}
+      {/* 🔥 MODAL DE EDICIÓN Y ASIGNACIÓN DE SOLICITUD */}
       {selectedRequest && (
         <EditRequestModal 
           isOpen={!!selectedRequest}

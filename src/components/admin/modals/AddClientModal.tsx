@@ -60,7 +60,7 @@ export default function NewClientModal({ isOpen, onClose, onRefresh }: Props) {
     try {
       // 🔥 ÚNICO CAMBIO: Adaptación de la consulta a la nueva estructura relacional
       const [profRes, sectRes] = await Promise.all([
-        supabase.from('profiles').select('id, full_name, email, role_id, specialty_id, internal_roles(name), specialties(name)'),
+        supabase.from('profiles').select('id, full_name, email, role_id, specialty_id, internal_roles(name), specialties(name)').eq('is_active', true),
         supabase.from('sectors').select('id, name').order('name')
       ]);
       

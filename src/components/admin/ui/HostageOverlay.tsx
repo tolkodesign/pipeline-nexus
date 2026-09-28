@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { AlertTriangle, X, ArrowRight } from 'lucide-react';
+import { AlertTriangle, X, ArrowRight, Minimize2, Maximize2 } from 'lucide-react';
 
 interface Props {
   overdueRequests: any[];
@@ -40,6 +40,79 @@ export default function HostageOverlay({ overdueRequests, onOpenTask, userName, 
     }
   }, [isDismissed]);
 
+  // DRAG & DROP Y CIRCLE MODE STATE
+  const [position, setPosition] = useState<{ x: number, y: number } | null>(() => {
+    const saved = localStorage.getItem('tolko_hostage_pos');
+    return saved ? JSON.parse(saved) : null;
+  });
+  
+  const [isCircleMode, setIsCircleMode] = useState(() => {
+    return localStorage.getItem('tolko_hostage_circle') === 'true';
+  });
+
+  const posRef = useRef(position);
+  useEffect(() => { posRef.current = position; }, [position]);
+  const wasDraggedRef = useRef(false);
+
+  const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.button !== 0) return; // Sólo clic izquierdo
+    const target = e.currentTarget;
+    const rect = target.getBoundingClientRect();
+    const offsetX = e.clientX - rect.left;
+    const offsetY = e.clientY - rect.top;
+    
+    let isDragging = false;
+    const startX = e.clientX;
+    const startY = e.clientY;
+    wasDraggedRef.current = false;
+
+    const onPointerMove = (moveEvent: PointerEvent) => {
+      if (!isDragging && (Math.abs(moveEvent.clientX - startX) > 3 || Math.abs(moveEvent.clientY - startY) > 3)) {
+        isDragging = true;
+        wasDraggedRef.current = true;
+        target.classList.remove('animate-bounce'); // Quitar animación al arrastrar
+      }
+      
+      if (isDragging) {
+        let newX = moveEvent.clientX - offsetX;
+        let newY = moveEvent.clientY - offsetY;
+        
+        // Mantener dentro de la pantalla
+        newX = Math.max(0, Math.min(newX, window.innerWidth - rect.width));
+        newY = Math.max(0, Math.min(newY, window.innerHeight - rect.height));
+
+        setPosition({ x: newX, y: newY });
+      }
+    };
+
+    const onPointerUp = () => {
+      if (isDragging && posRef.current) {
+        localStorage.setItem('tolko_hostage_pos', JSON.stringify(posRef.current));
+      }
+      document.removeEventListener('pointermove', onPointerMove);
+      document.removeEventListener('pointerup', onPointerUp);
+    };
+
+    document.addEventListener('pointermove', onPointerMove);
+    document.addEventListener('pointerup', onPointerUp);
+  };
+
+  const handleFloatingClick = () => {
+    if (wasDraggedRef.current) {
+      wasDraggedRef.current = false;
+      return;
+    }
+    setIsDismissed(false);
+    localStorage.removeItem('tolko_hostage_snooze');
+  };
+
+  const toggleCircleMode = (e: React.MouseEvent) => {
+    e.stopPropagation(); // Evitar que abra el modal
+    const newVal = !isCircleMode;
+    setIsCircleMode(newVal);
+    localStorage.setItem('tolko_hostage_circle', String(newVal));
+  };
+
   // Función para mandar a dormir al popup
   const handleDismiss = () => {
     setIsDismissed(true);
@@ -54,20 +127,45 @@ export default function HostageOverlay({ overdueRequests, onOpenTask, userName, 
 
   // Si ya cerró el popup (está en sus 3 horas de paz), le dejamos el mini-recordatorio flotante
   if (isDismissed) {
+    const style: React.CSSProperties = position 
+      ? { left: position.x, top: position.y, right: 'auto', bottom: 'auto' }
+      : { bottom: '24px', right: '24px' };
+
     return createPortal(
-      <button 
-        onClick={() => {
-          setIsDismissed(false);
-          localStorage.removeItem('tolko_hostage_snooze'); // Si lo abren manual, cancelamos el snooze
-        }}
-        className="fixed bottom-6 right-6 z-[90000] bg-luxury-red hover:bg-red-700 text-white p-3 md:px-5 md:py-3 rounded-full shadow-[0_10px_25px_rgba(211,0,45,0.4)] animate-bounce flex items-center gap-2 transition-all cursor-pointer group"
-        title="Ver cierres solicitados"
+      <div 
+        onPointerDown={handlePointerDown}
+        onClick={handleFloatingClick}
+        style={style}
+        className={`fixed z-[90000] bg-luxury-red hover:bg-red-700 text-white shadow-[0_10px_25px_rgba(211,0,45,0.4)] flex items-center justify-center transition-colors cursor-grab active:cursor-grabbing group ${!position ? 'animate-bounce' : ''} ${isCircleMode ? 'w-14 h-14 rounded-full' : 'p-3 md:px-5 md:py-3 rounded-full gap-2'}`}
+        title="Ver cierres solicitados (Arrastra para mover)"
       >
-        <AlertTriangle size={20} />
-        <span className="hidden md:block text-xs font-black uppercase tracking-widest">
-          {overdueRequests.length} Cierre{overdueRequests.length !== 1 ? 's' : ''} Pendiente{overdueRequests.length !== 1 ? 's' : ''}
-        </span>
-      </button>,
+        {isCircleMode ? (
+          <>
+            <span className="text-xl font-black">{overdueRequests.length}</span>
+            <button 
+              onClick={toggleCircleMode}
+              className="absolute -top-1 -right-1 bg-white text-luxury-red rounded-full p-1 shadow-md opacity-0 group-hover:opacity-100 transition-opacity"
+              title="Expandir"
+            >
+              <Maximize2 size={12} strokeWidth={3} />
+            </button>
+          </>
+        ) : (
+          <>
+            <AlertTriangle size={20} className="shrink-0" />
+            <span className="hidden md:block text-xs font-black uppercase tracking-widest select-none">
+              {overdueRequests.length} Cierre{overdueRequests.length !== 1 ? 's' : ''} Pendiente{overdueRequests.length !== 1 ? 's' : ''}
+            </span>
+            <button 
+              onClick={toggleCircleMode}
+              className="ml-1 bg-black/10 hover:bg-black/20 rounded-full p-1.5 opacity-0 group-hover:opacity-100 transition-opacity"
+              title="Minimizar a círculo"
+            >
+              <Minimize2 size={12} strokeWidth={3} />
+            </button>
+          </>
+        )}
+      </div>,
       document.body
     );
   }

@@ -263,6 +263,20 @@ function TopCampaignSlide({ campaign, brand, slideIndex, totalSlides, colorP, cl
   );
 }
 
+export const formatSecondsToReadable = (totalSeconds: number) => {
+  const h = Math.floor(totalSeconds / 3600);
+  const m = Math.floor((totalSeconds % 3600) / 60);
+  const s = totalSeconds % 60;
+  if (h > 0) return `${h}h ${m}m ${s}s`;
+  if (m > 0) return `${m}m ${s}s`;
+  return `${s}s`;
+};
+
+export const getSpecCount = (map: Record<string, number>, keywords: string[]) => {
+  const key = Object.keys(map).find(k => keywords.some(kw => k.toLowerCase().includes(kw)));
+  return { name: key || keywords[0], value: key ? map[key] : 0 };
+};
+
 export default function AdminReports() {
   const { user, profile } = useAuth();
   
@@ -277,6 +291,8 @@ export default function AdminReports() {
   const [requests, setRequests] = useState<any[]>([]);
   const [clients, setClients] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [tablePage, setTablePage] = useState(1);
+  const TABLE_PAGE_SIZE = 15;
   const [exportingPDF, setExportingPDF] = useState(false);
 
   // FILTROS
@@ -289,6 +305,7 @@ export default function AdminReports() {
   const [mailchimpStats, setMailchimpStats] = useState({ totalCampaignsAnalized: 0, totalEmailsSent: 0, openRate: 0, clickRate: 0, campaigns: [] as any[] });
 
   useEffect(() => { if (user?.id) fetchAdminReportData(); }, [user]);
+  useEffect(() => { setTablePage(1); }, [reportClientId, startMonth, endMonth, statusFilter, sortOrder]);
 
   useEffect(() => {
     if (clients.length === 0) return; 
@@ -339,26 +356,43 @@ export default function AdminReports() {
       const { data: orgs } = await orgsQuery;
       if (orgs) setClients(orgs);
 
-      let reqsQuery = supabase
-        .from('requests')
-        .select(`
-          *, 
-          organizations(name, logo_url), 
-          projects(name), 
-          request_categories(name),
-          organization_deliverables(name), 
-          priorities(level, color_code), 
-          file_extensions(extension), 
-          request_tasks(discipline, status, updated_at, quantity, task_adjustments(origin), task_assignees(assigned_quantity, editing_hours, recording_hours, video_duration)), 
-          requester:profiles!requests_requester_id_fkey(full_name)
-        `)
-        .eq('is_active', true) 
-        .order('created_at', { ascending: false });
+      const PAGE_SIZE = 1000;
+      let allReqs: any[] = [];
+      let fetchMore = true;
+      let start = 0;
 
-      if (allowedOrgIds) reqsQuery = reqsQuery.in('organization_id', allowedOrgIds);
+      while (fetchMore) {
+        let reqsQuery = supabase
+          .from('requests')
+          .select(`
+            *, 
+            organizations(name, logo_url), 
+            projects(name), 
+            request_categories(name),
+            organization_deliverables(name), 
+            priorities(level, color_code), 
+            file_extensions(extension), 
+            request_tasks(discipline, status, updated_at, quantity, task_adjustments(origin), task_assignees(assigned_quantity, editing_hours, recording_hours, video_duration)), 
+            requester:profiles!requests_requester_id_fkey(full_name)
+          `)
+          .eq('is_active', true) 
+          .order('created_at', { ascending: false })
+          .range(start, start + PAGE_SIZE - 1);
 
-      const { data: reqs } = await reqsQuery;
-      setRequests(reqs || []);
+        if (allowedOrgIds) reqsQuery = reqsQuery.in('organization_id', allowedOrgIds);
+        
+        const { data: pageData, error } = await reqsQuery;
+        if (error) throw error;
+
+        if (pageData && pageData.length > 0) {
+          allReqs = [...allReqs, ...pageData];
+          start += PAGE_SIZE;
+          if (pageData.length < PAGE_SIZE) fetchMore = false;
+        } else {
+          fetchMore = false;
+        }
+      }
+      setRequests(allReqs);
     } catch (error) { 
       console.error(error); 
     } finally { 
@@ -460,7 +494,7 @@ export default function AdminReports() {
       else { clientAdjustments += (req.total_adjustments || 0); }
     });
 
-    let totalEditingHours = 0; let totalSlides = 0; let totalVideos = 0; let totalGifs = 0; let totalPpts = 0;
+    let totalEditingHours = 0; let totalRecordingHours = 0; let totalVideoDurationSeconds = 0; let totalSlides = 0; let totalVideos = 0; let totalGifs = 0; let totalPpts = 0;
     let totalTotems = 0; let totalGestiones = 0; let totalEnvios = 0; let totalPR = 0; let totalCopysExcatos = 0; 
     let priorityCounts = { alta: 0, media: 0, baja: 0 };
     let projectCounts: Record<string, number> = {}; let brandCounts: Record<string, number> = {};
@@ -469,6 +503,11 @@ export default function AdminReports() {
       'Audiovisual': 0, 'Diseño': 0, 'Programación': 0, 'Contenido y estrategia': 0, 
       'Producción': 0, 'Staff': 0, 'RP': 0 
     };
+    let completedSpecialtyMap: Record<string, number> = { 
+      'Audiovisual': 0, 'Diseño': 0, 'Programación': 0, 'Contenido y estrategia': 0, 
+      'Producción': 0, 'Staff': 0, 'RP': 0 
+    };
+    let specialtyRequestsMap: Record<string, number> = {};
     
     let strategyCount = 0;
     let totalDeliverablesCount = 0;
@@ -554,12 +593,17 @@ export default function AdminReports() {
       // Sumar al Global Map de la UI
       Object.entries(discCounts).forEach(([disc, val]) => {
          if (val > 0) {
+           let targetDisc = disc;
            if (disc === 'Contenido') {
-              specialtyMap['Contenido y estrategia'] += val;
+              targetDisc = 'Contenido y estrategia';
               totalCopysExcatos += val;
-           } else {
-              specialtyMap[disc] += val;
            }
+           
+           specialtyMap[targetDisc] = (specialtyMap[targetDisc] || 0) + val;
+           if (isCompleted) completedSpecialtyMap[targetDisc] = (completedSpecialtyMap[targetDisc] || 0) + val;
+           
+           specialtyRequestsMap[targetDisc] = (specialtyRequestsMap[targetDisc] || 0) + 1;
+
            if (disc === 'RP') totalPR += val;
          }
       });
@@ -570,6 +614,18 @@ export default function AdminReports() {
           if (t.task_assignees && Array.isArray(t.task_assignees)) {
              t.task_assignees.forEach((a: any) => {
                 totalEditingHours += Number(a.editing_hours) || 0;
+                totalRecordingHours += Number(a.recording_hours) || 0;
+                
+                if (a.video_duration) {
+                  const parts = a.video_duration.toString().split(':').map(Number);
+                  if (parts.length === 3) {
+                     totalVideoDurationSeconds += (parts[0] * 3600) + (parts[1] * 60) + (parts[2]);
+                  } else if (parts.length === 2) {
+                     totalVideoDurationSeconds += (parts[0] * 60) + (parts[1]);
+                  } else if (parts.length === 1) {
+                     totalVideoDurationSeconds += parts[0] || 0;
+                  }
+                }
              });
           }
         });
@@ -611,7 +667,7 @@ export default function AdminReports() {
 
     return { 
       clientData, selectedClient, totalRequests, completed, totalDeliverablesCount, completedDeliverablesCount, clientAdjustments, agencyAdjustments, 
-      specialtyMap, totalEditingHours, totalSlides, totalVideos, totalGifs, totalPpts, priorityCounts, 
+      specialtyMap, completedSpecialtyMap, specialtyRequestsMap, totalEditingHours, totalRecordingHours, totalVideoDurationFormatted: formatSecondsToReadable(totalVideoDurationSeconds), totalSlides, totalVideos, totalGifs, totalPpts, priorityCounts, 
       topRecurrentProjects, topBrands, strategyCount, totalTotems, totalGestiones, totalEnvios, totalPR, isBioPappel, totalCopysExcatos 
     };
   };
@@ -991,9 +1047,14 @@ export default function AdminReports() {
           {/* EXPORTACIÓN EXCLUSIVA DE ACUERDO A LA PESTAÑA */}
           <div className="shrink-0 mr-14 md:mr-16">
             {activeTab === 'pipeline' ? (
-              <button onClick={() => exportToPremiumReport(reportData.clientData, reportData.selectedClient.name)} className="bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2 rounded-xl font-black text-[11px] flex items-center gap-2 uppercase tracking-wider transition-all shadow-sm cursor-pointer">
-                <Download size={14} strokeWidth={2.5}/> Excel
-              </button>
+              <div className="flex gap-2">
+                <button onClick={fetchAdminReportData} disabled={loading} className="bg-gray-100 hover:bg-gray-200 text-gray-700 px-5 py-2 rounded-xl font-black text-[11px] flex items-center gap-2 uppercase tracking-wider transition-all shadow-sm cursor-pointer disabled:opacity-50">
+                  <RefreshCw size={14} strokeWidth={2.5} className={loading ? 'animate-spin' : ''} /> {loading ? 'Cargando...' : 'Actualizar'}
+                </button>
+                <button onClick={() => exportToPremiumReport(reportData.clientData, reportData.selectedClient.name)} className="bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2 rounded-xl font-black text-[11px] flex items-center gap-2 uppercase tracking-wider transition-all shadow-sm cursor-pointer">
+                  <Download size={14} strokeWidth={2.5}/> Excel
+                </button>
+              </div>
             ) : (
               <button onClick={handleExportPDFSlides} disabled={exportingPDF} className="bg-[#D3002D] hover:bg-red-700 text-white px-5 py-2 rounded-xl font-black text-[11px] flex items-center gap-2 uppercase tracking-wider transition-all shadow-sm cursor-pointer disabled:opacity-50">
                 <Printer size={14} strokeWidth={2.5}/> {exportingPDF ? 'Procesando...' : 'Exportar en PDF'}
@@ -1111,15 +1172,15 @@ export default function AdminReports() {
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               <div className="bg-red-50/50 p-4 rounded-2xl text-center border border-red-100">
                 <span className="text-xs text-gray-500 font-bold uppercase block">Audiovisual</span>
-                <span className="text-2xl font-black text-luxury-red">{reportData.specialtyMap['Audiovisual']}</span>
+                <span className="text-2xl font-black text-luxury-red">{getSpecCount(reportData.specialtyMap, ['audiovisual']).value}</span>
               </div>
               <div className="bg-red-50/50 p-4 rounded-2xl text-center border border-red-100">
                 <span className="text-xs text-gray-500 font-bold uppercase block">Diseño Gráfico</span>
-                <span className="text-2xl font-black text-luxury-red">{reportData.specialtyMap['Diseño']}</span>
+                <span className="text-2xl font-black text-luxury-red">{getSpecCount(reportData.specialtyMap, ['diseñ', 'arte']).value}</span>
               </div>
               <div className="bg-red-50/50 p-4 rounded-2xl text-center border border-red-100">
                 <span className="text-xs text-gray-500 font-bold uppercase block">Programación</span>
-                <span className="text-2xl font-black text-luxury-red">{reportData.specialtyMap['Programación']}</span>
+                <span className="text-2xl font-black text-luxury-red">{getSpecCount(reportData.specialtyMap, ['programaci', 'desarrollo', 'web']).value}</span>
               </div>
               <div className="bg-red-50/50 p-4 rounded-2xl text-center border border-red-100">
                 <span className="text-xs text-gray-500 font-bold uppercase block">Contenido</span>
@@ -1151,7 +1212,7 @@ export default function AdminReports() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100 font-medium">
-                    {reportData.clientData.map((req: any) => (
+                    {reportData.clientData.slice((tablePage - 1) * TABLE_PAGE_SIZE, tablePage * TABLE_PAGE_SIZE).map((req: any) => (
                       <tr key={req.id} className="hover:bg-gray-50 transition-colors">
                         <td className="p-4 font-black text-gray-900">#{req.id.slice(-6).toUpperCase()}</td>
                         <td className="p-4 font-bold">{req.organizations?.name || 'N/A'}</td>
@@ -1181,6 +1242,17 @@ export default function AdminReports() {
                     )}
                   </tbody>
                 </table>
+                {reportData.clientData.length > 0 && (
+                  <div className="flex items-center justify-between p-4 bg-gray-50 border-t border-gray-100">
+                    <span className="text-xs font-bold text-gray-500">
+                      Mostrando {(tablePage - 1) * TABLE_PAGE_SIZE + 1} a {Math.min(tablePage * TABLE_PAGE_SIZE, reportData.clientData.length)} de {reportData.clientData.length}
+                    </span>
+                    <div className="flex gap-2">
+                      <button onClick={() => setTablePage(p => Math.max(1, p - 1))} disabled={tablePage === 1} className="px-3 py-1 rounded-lg bg-white border border-gray-200 text-gray-600 font-bold text-xs hover:bg-gray-100 disabled:opacity-50 transition-colors cursor-pointer">Anterior</button>
+                      <button onClick={() => setTablePage(p => Math.min(Math.ceil(reportData.clientData.length / TABLE_PAGE_SIZE), p + 1))} disabled={tablePage >= Math.ceil(reportData.clientData.length / TABLE_PAGE_SIZE)} className="px-3 py-1 rounded-lg bg-white border border-gray-200 text-gray-600 font-bold text-xs hover:bg-gray-100 disabled:opacity-50 transition-colors cursor-pointer">Siguiente</button>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -1248,142 +1320,89 @@ export default function AdminReports() {
               </div>
             </SlideWrapper>
 
-            {/* SLIDE: AUDIOVISUAL */}
-            {reportData.specialtyMap['Audiovisual'] > 0 && (
-              <SlideWrapper>
-                <div className="pdf-slide relative flex overflow-hidden shrink-0 bg-white w-[1280px] h-[720px]">
-                  <SlideSidebar index={++slideNum} total={TOTAL_SLIDES} icon={BarChart3} title={<>Métricas<br />Generales</>} colorP={cP} clientLogo={reportData.selectedClient.logo_url} />
-                  <div className="flex-1 p-14 flex flex-col">
-                    <SectionPill icon={Video} title="Audiovisual" colorP={cP} />
-                    <div className="mt-10 flex-1 bg-red-50/30 rounded-3xl flex items-center justify-center gap-20 px-12 border border-red-100">
-                      <ProgressRing percent={100} value={reportData.specialtyMap['Audiovisual']} label="Producción Audiovisual" color={cP} track="#FEE2E2" size={280} strokeWidth={22} />
-                      <div className="max-w-sm">
-                        <p className="text-2xl text-gray-400 font-black uppercase tracking-widest mb-4">Piezas Producidas</p>
-                        <EditableBigNumber value={reportData.specialtyMap['Audiovisual']} className="text-7xl font-black text-[#0F0F12] leading-none mb-6" />
-                        <p className="text-lg text-gray-500 font-medium leading-relaxed">Entregables de video, animaciones y motion graphics.</p>
+            {/* DYNAMIC SPECIALTIES SLIDES */}
+            {specialties.map(spec => {
+              const specName = spec.name;
+              const count = reportData.specialtyMap[specName] || 0;
+              if (count === 0) return null;
+              
+              const nm = specName.toLowerCase();
+              let specificCards = [];
+              let titleIcon = Target;
+              let mainAccent = cP;
+              
+              if (nm.includes('audiovisual') || nm.includes('video')) {
+                 titleIcon = Video;
+                 specificCards = [
+                   { icon: Video, value: reportData.totalVideos, label: 'Videos Entregados', accent: cP },
+                   { icon: Clock, value: reportData.totalGifs, label: 'GIFs Animados', accent: '#0F0F12' }
+                 ];
+              } else if (nm.includes('diseñ') || nm.includes('arte')) {
+                 titleIcon = PenTool;
+                 if (isBioPappel) {
+                   specificCards.push({ icon: Copy, value: reportData.specialtyMap['Contenido y estrategia'] || 0, label: 'Entregables de Texto', accent: cP });
+                 } else {
+                   specificCards.push({ icon: Presentation, value: reportData.totalPpts, label: 'Presentaciones', accent: cP });
+                 }
+                 specificCards.push({ icon: LayoutTemplate, value: reportData.totalSlides, label: 'Slides Diseñados', accent: cP });
+                 specificCards.push({ icon: Sparkles, value: Math.max(0, count - reportData.totalSlides), label: 'Artes / Diseños', accent: '#0F0F12' });
+              } else if (nm.includes('programaci') || nm.includes('desarrollo') || nm.includes('web')) {
+                 titleIcon = MonitorPlay;
+                 specificCards = [
+                   { icon: MonitorPlay, value: count, label: 'Proyectos Codeados', accent: cP },
+                   { icon: Clock, value: reportData.totalEditingHours, label: 'Horas de Desarrollo', accent: '#0F0F12' }
+                 ];
+              } else if (nm.includes('contenid') || nm.includes('estrategia') || nm.includes('copy')) {
+                 titleIcon = FileText;
+                 specificCards = [
+                   { icon: FileText, value: count, label: 'Piezas Redactadas', accent: cP },
+                   { icon: Sparkles, value: reportData.strategyCount, label: 'Estrategias', accent: '#0F0F12' }
+                 ];
+                 if (isBioPappel) {
+                    specificCards.push({ icon: CheckCircle2, value: reportData.totalCopysExcatos, label: 'Redacción Exacta', accent: '#10B981' });
+                 }
+              } else if (nm.includes('producci')) {
+                 titleIcon = Film;
+                 specificCards = [
+                   { icon: Film, value: count, label: 'Llamados / Producciones', accent: cP },
+                   { icon: Clock, value: (reportData as any).totalRecordingHours || 0, label: 'Horas Grabadas', accent: '#0F0F12' }
+                 ];
+              } else if (nm.includes('staff')) {
+                 titleIcon = UserCheck;
+                 specificCards = [
+                   { icon: UserCheck, value: count, label: 'Eventos Apoyados', accent: cP }
+                 ];
+              } else if (nm.includes('rp') || nm.includes('relaciones')) {
+                 titleIcon = Megaphone;
+                 specificCards = [
+                   { icon: Megaphone, value: reportData.totalPR, label: 'Impactos PR', accent: cP },
+                   { icon: Send, value: reportData.totalGestiones, label: 'Gestiones', accent: '#0F0F12' }
+                 ];
+              } else {
+                 // GENERIC FALLBACK FOR NEW SPECIALTIES LIKE MARKETING
+                 titleIcon = Layers;
+                 specificCards = [
+                   { icon: Layout, value: count, label: 'Solicitudes Totales', accent: cP }
+                 ];
+              }
+
+              return (
+                <SlideWrapper key={spec.id}>
+                  <div className="pdf-slide relative flex overflow-hidden shrink-0 bg-white w-[1280px] h-[720px]">
+                    <SlideSidebar index={++slideNum} total={TOTAL_SLIDES} icon={BarChart3} title={<>Métricas<br />Generales</>} colorP={cP} clientLogo={reportData.selectedClient.logo_url} />
+                    <div className="flex-1 p-14 flex flex-col">
+                      <SectionPill icon={titleIcon} title={specName} colorP={cP} />
+                      <div className="mt-10 flex-1 bg-red-50/30 rounded-3xl p-8 grid grid-cols-4 gap-6 border border-red-100">
+                        {specificCards.map((c, i) => (
+                          <MetricCard key={i} icon={c.icon} value={c.value} label={c.label} accent={c.accent} />
+                        ))}
+                        <MetricCard icon={Target} value={count} label="Total General" accent="#10B981" />
                       </div>
                     </div>
                   </div>
-                </div>
-              </SlideWrapper>
-            )}
-
-            {/* SLIDE: DISEÑO */}
-            {reportData.specialtyMap['Diseño'] > 0 && (
-              <SlideWrapper>
-                <div className="pdf-slide relative flex overflow-hidden shrink-0 bg-white w-[1280px] h-[720px]">
-                  <SlideSidebar index={++slideNum} total={TOTAL_SLIDES} icon={BarChart3} title={<>Métricas<br />Generales</>} colorP={cP} clientLogo={reportData.selectedClient.logo_url} />
-                  <div className="flex-1 p-14 flex flex-col">
-                    <SectionPill icon={PenTool} title="Diseño Gráfico" colorP={cP} />
-                    <div className="mt-10 flex-1 bg-red-50/30 rounded-3xl p-8 grid grid-cols-4 gap-6 border border-red-100">
-                      {isBioPappel ? (
-                        <MetricCard icon={Copy} value={reportData.specialtyMap['Contenido y estrategia']} label="Entregables de Texto" accent={cP} />
-                      ) : (
-                        <MetricCard icon={Presentation} value={reportData.totalPpts} label="Presentaciones" accent={cP} />
-                      )}
-                      <MetricCard icon={LayoutTemplate} value={reportData.totalSlides} label="Slides Diseñados" accent={cP} />
-                      <MetricCard icon={Sparkles} value={Math.max(0, reportData.specialtyMap['Diseño'] - reportData.totalSlides)} label="Artes / Diseños" accent="#0F0F12" />
-                      <MetricCard icon={Target} value={reportData.specialtyMap['Diseño']} label="Total General" accent="#10B981" />
-                    </div>
-                  </div>
-                </div>
-              </SlideWrapper>
-            )}
-
-            {/* SLIDE: PROGRAMACIÓN */}
-            {reportData.specialtyMap['Programación'] > 0 && (
-              <SlideWrapper>
-                <div className="pdf-slide relative flex overflow-hidden shrink-0 bg-white w-[1280px] h-[720px]">
-                  <SlideSidebar index={++slideNum} total={TOTAL_SLIDES} icon={BarChart3} title={<>Métricas<br />Generales</>} colorP={cP} clientLogo={reportData.selectedClient.logo_url} />
-                  <div className="flex-1 p-14 flex flex-col">
-                    <SectionPill icon={MonitorPlay} title="Programación" colorP={cP} />
-                    <div className="mt-10 flex-1 bg-red-50/30 rounded-3xl flex items-center justify-center gap-20 px-12 border border-red-100">
-                      <ProgressRing percent={(reportData.specialtyMap['Programación'] / Math.max(1, reportData.totalRequests)) * 100} value={reportData.specialtyMap['Programación']} label="HTML / Desarrollos" color={cP} track="#FEE2E2" size={280} strokeWidth={22} />
-                      <div className="max-w-sm">
-                        <p className="text-2xl text-gray-400 font-black uppercase tracking-widest mb-4">Programación</p>
-                        <EditableBigNumber value={reportData.specialtyMap['Programación']} className="text-7xl font-black text-[#0F0F12] leading-none mb-6" />
-                        <p className="text-lg text-gray-500 font-medium leading-relaxed">Entregables procesados de código e integración.</p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </SlideWrapper>
-            )}
-
-            {/* SLIDE: CONTENIDO Y ESTRATEGIA */}
-            {reportData.specialtyMap['Contenido y estrategia'] > 0 && (
-              <SlideWrapper>
-                <div className="pdf-slide relative flex overflow-hidden shrink-0 bg-white w-[1280px] h-[720px]">
-                  <SlideSidebar index={++slideNum} total={TOTAL_SLIDES} icon={BarChart3} title={<>Métricas<br />Generales</>} colorP={cP} clientLogo={reportData.selectedClient.logo_url} />
-                  <div className="flex-1 p-14 flex flex-col">
-                    <SectionPill icon={LayoutTemplate} title="Contenido y Estrategia" colorP={cP} />
-                    <div className="mt-10 flex-1 grid grid-cols-2 gap-6">
-                      <div className="bg-red-50/30 border border-red-100 rounded-3xl p-8 flex flex-col items-center justify-center text-center">
-                        <div className="w-14 h-14 rounded-2xl flex items-center justify-center mb-6" style={{ backgroundColor: `${cP}1A` }}><Copy size={26} style={{ color: cP }} strokeWidth={2.5} /></div>
-                        <EditableBigNumber value={reportData.specialtyMap['Contenido y estrategia']} className="text-[110px] font-black leading-none mb-4" style={{ color: cP }} />
-                        <span className="text-xl text-gray-500 font-bold uppercase tracking-widest">Copys & Textos</span>
-                      </div>
-                      <div className="bg-red-50/30 border border-red-100 rounded-3xl p-8 flex flex-col items-center justify-center text-center">
-                        <div className="w-14 h-14 rounded-2xl bg-[#0F0F12]/10 flex items-center justify-center mb-6"><Flag size={26} className="text-[#0F0F12]" strokeWidth={2.5} /></div>
-                        <EditableBigNumber value={reportData.strategyCount} className="text-[110px] font-black text-[#0F0F12] leading-none mb-4" />
-                        <span className="text-xl text-gray-500 font-bold uppercase tracking-widest">Estrategia y Conceptos</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </SlideWrapper>
-            )}
-
-            {/* SLIDE: PRODUCCIÓN */}
-            {reportData.specialtyMap['Producción'] > 0 && (
-              <SlideWrapper>
-                <div className="pdf-slide relative flex overflow-hidden shrink-0 bg-white w-[1280px] h-[720px]">
-                  <SlideSidebar index={++slideNum} total={TOTAL_SLIDES} icon={BarChart3} title={<>Métricas<br />Producción</>} colorP={cP} clientLogo={reportData.selectedClient.logo_url} />
-                  <div className="flex-1 p-14 flex flex-col">
-                    <SectionPill icon={Package} title="Producción y Logística" colorP={cP} />
-                    <div className="mt-10 flex-1 bg-red-50/30 rounded-3xl p-8 grid grid-cols-2 gap-6 border border-red-100">
-                      <MetricCard icon={Package} value={reportData.specialtyMap['Producción']} label="Materiales Producidos" accent={cP} />
-                      <MetricCard icon={Target} value={reportData.completed} label="Entregas Exitosas" accent="#0F0F12" />
-                    </div>
-                  </div>
-                </div>
-              </SlideWrapper>
-            )}
-
-            {/* SLIDE: STAFF Y APOYO */}
-            {reportData.specialtyMap['Staff'] > 0 && (
-              <SlideWrapper>
-                <div className="pdf-slide relative flex overflow-hidden shrink-0 bg-white w-[1280px] h-[720px]">
-                  <SlideSidebar index={++slideNum} total={TOTAL_SLIDES} icon={BarChart3} title={<>Métricas<br />Staff</>} colorP={cP} clientLogo={reportData.selectedClient.logo_url} />
-                  <div className="flex-1 p-14 flex flex-col">
-                    <SectionPill icon={UserCheck} title="Staff y Apoyo" colorP={cP} />
-                    <div className="mt-10 flex-1 bg-red-50/30 rounded-3xl p-8 grid grid-cols-2 gap-6 border border-red-100">
-                      <MetricCard icon={UserCheck} value={reportData.specialtyMap['Staff']} label="Asignaciones de Staff" accent={cP} />
-                      <MetricCard icon={CalendarDays} value={reportData.totalRequests} label="Eventos / Apoyos Totales" accent="#0F0F12" />
-                    </div>
-                  </div>
-                </div>
-              </SlideWrapper>
-            )}
-
-            {/* DIAPOSITIVA: RELACIONES PÚBLICAS */}
-            {reportData.totalPR > 0 && (
-              <SlideWrapper>
-                <div className="pdf-slide relative flex overflow-hidden shrink-0 bg-white w-[1280px] h-[720px]">
-                  <SlideSidebar index={++slideNum} total={TOTAL_SLIDES} icon={Megaphone} title={<>Impacto<br />PR</>} colorP={cP} clientLogo={reportData.selectedClient.logo_url} />
-                  <div className="flex-1 p-14 flex flex-col">
-                    <SectionPill icon={Target} title="Relaciones Públicas" colorP={cP} />
-                    <div className="mt-10 flex-1 bg-red-50/30 border border-red-100 rounded-3xl p-8 grid grid-cols-4 gap-6">
-                      <MetricCard icon={Megaphone} value={reportData.totalPR} label="Acciones de PR" accent={cP} />
-                      <MetricCard icon={Flag} value={reportData.totalGestiones} label="Gestiones" accent="#F59E0B" />
-                      <MetricCard icon={Send} value={reportData.totalEnvios} label="Envíos / Kits" accent="#10B981" />
-                      <MetricCard icon={Award} value={reportData.totalPR} label="Entregables Completados" accent="#0F0F12" />
-                    </div>
-                  </div>
-                </div>
-              </SlideWrapper>
-            )}
-
+                </SlideWrapper>
+              );
+            })}
             {/* SLIDE: PRIORIDADES */}
             <SlideWrapper>
               <div className="pdf-slide relative flex overflow-hidden shrink-0 bg-white w-[1280px] h-[720px]">

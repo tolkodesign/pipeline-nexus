@@ -23,6 +23,7 @@ import NewRequestModal from '../../components/client/NewRequestModal';
 import NotificationBell from '../../components/ui/NotificationBell';
 import ClientAnalytics from '../../components/client/ClientAnalytics';
 import CalendarPage from '../../components/admin/tabs/CalendarPage';
+import PressDirectory from '../../components/rp/PressDirectory';
 
 import { LayoutGrid, CheckCircle2, Flame, Clock, ArrowRight, Activity, Search, SlidersHorizontal, ArrowUpDown, ChevronLeft, ChevronRight, AlertTriangle, History, X, Filter, BellRing, Plus, Building2, FolderKanban, Calendar } from 'lucide-react';
 import Swal from 'sweetalert2';
@@ -282,7 +283,7 @@ export default function AdminDashboard() {
         fetchAllActiveRequests(),
         supabase.from('priorities').select('*'),
         supabase.from('audit_logs').select('*, profiles(full_name, avatar_url)').order('created_at', { ascending: false }).limit(15),
-        supabase.from('profiles').select('id, full_name, role_id, specialty_id, internal_roles(name), specialties(name)').not('role_id', 'is', null),
+        supabase.from('profiles').select('id, full_name, role_id, specialty_id, internal_roles(name), specialties(name)').not('role_id', 'is', null).eq('is_active', true),
         supabase.from('specialties').select('id, name')
       ]);
 
@@ -988,6 +989,7 @@ export default function AdminDashboard() {
               {activeTab === 'historial' && <HistoryPage />}
               {activeTab === 'configuracion' && <SettingsPage />}
               {activeTab === 'calendario' && <CalendarPage />}
+              {activeTab === 'prensa' && <PressDirectory isEmbedded={true} />}
 
             </section>
           </div>

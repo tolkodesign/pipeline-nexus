@@ -63,7 +63,7 @@ export default function CoordinatorDashboard({ initialTab = 'solicitudes' }: Coo
   const [clientDistribution, setClientDistribution] = useState<any[]>([]);
 
   const leaderSpecialty = profile?.specialties?.name || profile?.specialty || 'Diseño';
-  const userRole = profile?.internal_roles?.name || profile?.internal_role || 'Líder';
+  const userRole = profile?.normalized_role || 'Líder';
 
   useEffect(() => {
     setActiveTab(initialTab);

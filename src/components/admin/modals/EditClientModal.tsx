@@ -49,7 +49,7 @@ export default function EditClientModal({ isOpen, onClose, onRefresh, client }: 
     try {
       const [profRes, sectRes] = await Promise.all([
         // Quitamos el .is() que fallaba y traemos todo para filtrarlo manualmente
-        supabase.from('profiles').select('id, full_name, email, role_id, specialty_id, internal_roles(name), specialties(name)'),
+        supabase.from('profiles').select('id, full_name, email, role_id, specialty_id, internal_roles(name), specialties(name)').eq('is_active', true),
         supabase.from('sectors').select('id, name').order('name')
       ]);
       

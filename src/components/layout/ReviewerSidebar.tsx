@@ -5,6 +5,8 @@ import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../lib/supabase';
 import Swal from 'sweetalert2';
 import ThemeToggle from '../ui/ThemeToggle';
+import { canManagePressDirectory } from '../../lib/pressDirectoryAuth';
+import { Newspaper } from 'lucide-react';
 
 interface SidebarProps {
   profile: any; // Solo recibe el perfil mapeado de la base de datos
@@ -23,6 +25,7 @@ export default function ReviewerSidebar({ profile }: SidebarProps) {
   const menuItems = [
     { icon: <LayoutGrid size={18} />, label: 'Mi Panel', path: '/colaborador' },
     { icon: <FolderCheck size={18} />, label: 'Mis Entregas', path: '/colaborador/entregas' },
+    ...(canManagePressDirectory(profile) ? [{ icon: <Newspaper size={18} />, label: 'Prensa', path: '/colaborador/reporters' }] : []),
     { icon: <Settings size={18} />, label: 'Configuración', path: '/colaborador/settings' },
   ];
 

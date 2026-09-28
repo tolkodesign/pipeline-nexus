@@ -5,6 +5,7 @@ import ClientRequestCard from '../../components/client/ClientRequestCard';
 import ClientAnalytics from '../../components/client/ClientAnalytics'; 
 import ClientTour from '../../components/client/ClientTour'; 
 import { supabase } from '../../lib/supabase';
+import { NORMALIZED_ROLES } from '../../lib/identity';
 import { useAuth } from '../../context/AuthContext';
 import Swal from 'sweetalert2';
 import NotificationBell from '../../components/ui/NotificationBell';
@@ -43,7 +44,7 @@ export default function ClientDashboard({ bannerUrl }: ClientDashboardProps) {
 
   useEffect(() => {
     if (!myOrganizationId) {
-      if (profile?.internal_role) setLoading(false);
+      if (profile?.normalized_role !== NORMALIZED_ROLES.CLIENT) setLoading(false);
       return;
     }
 
@@ -79,7 +80,7 @@ export default function ClientDashboard({ bannerUrl }: ClientDashboardProps) {
         `)
         .eq('profile_id', user!.id);
         
-      const isStaff = !!profile?.internal_role;
+      const isStaff = profile?.normalized_role !== NORMALIZED_ROLES.CLIENT;
       if (error) throw error;
       if (!data || data.length === 0) {
         if (isStaff) { setMyOrganizationId(null); return; }
@@ -204,7 +205,7 @@ export default function ClientDashboard({ bannerUrl }: ClientDashboardProps) {
   const inProcessCount = requests.filter(r => r.status === 'en_proceso' || r.status === 'en_revision_cliente').length;
   const completedCount = requests.filter(r => ['completado', 'entregado', 'aprobado'].includes(r.status)).length;
 
-  if (loading && !myOrganizationId && !profile?.internal_role) {
+  if (loading && !myOrganizationId && profile?.normalized_role === NORMALIZED_ROLES.CLIENT) {
     return (
       <div className="min-h-screen bg-gray-50 dark:bg-luxury-dark flex items-center justify-center text-gray-500 dark:text-gray-400 text-xs tracking-widest uppercase font-sans">
         <div className="text-center space-y-3">

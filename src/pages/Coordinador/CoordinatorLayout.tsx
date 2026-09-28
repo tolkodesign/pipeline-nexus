@@ -18,6 +18,7 @@ const MyAssignments = lazy(() => import('../../components/coordinador/MyAssignme
 
 // 🔥 NUEVO: IMPORTACIÓN LAZY DEL CALENDARIO OPERATIVO
 const CalendarPage = lazy(() => import('../../components/admin/tabs/CalendarPage'));
+const PressDirectory = lazy(() => import('../../components/rp/PressDirectory'));
 
 export default function CoordinatorLayout() {
   const { profile } = useAuth();
@@ -88,6 +89,9 @@ export default function CoordinatorLayout() {
             
             {/* 🔥 RUTA DEL CALENDARIO OPERATIVO 🔥 */}
             <Route path="/calendar" element={<CalendarPage />} />
+            
+            {/* 🔥 RUTA DEL DIRECTORIO DE PRENSA 🔥 */}
+            <Route path="/reporters" element={<PressDirectory />} />
             
             {/* Pantalla segura de cambio de password */}
             <Route path="/settings" element={<ClientSettings />} /> 

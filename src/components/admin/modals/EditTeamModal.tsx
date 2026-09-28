@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { X, UploadCloud, CheckCircle2, Loader2, Mail, ShieldAlert, Lock, User, Briefcase } from 'lucide-react';
 import { supabase } from '../../../lib/supabase';
+import { NORMALIZED_ROLES } from '../../../lib/identity';
 import { useAuth } from '../../../context/AuthContext'; 
 import Swal from 'sweetalert2';
 
@@ -14,9 +15,9 @@ interface Props {
 export default function EditTeamModal({ isOpen, onClose, onRefresh, member }: Props) {
   const { profile } = useAuth();
   
-  const roleIdNum = Number(profile?.role_id);
-  const roleText = (profile?.internal_role || '').toLowerCase().trim();
-  const isAdmin = profile?.is_admin === true || roleIdNum === 3 || roleText === 'admin';
+
+  
+  const isAdmin = profile?.normalized_role === NORMALIZED_ROLES.ADMIN;
 
   const [loading, setLoading] = useState(false);
   

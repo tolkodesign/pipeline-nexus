@@ -1,4 +1,5 @@
 import { Mail, Phone, Trash2, Edit2, RotateCcw, FolderKanban } from 'lucide-react';
+import { getNormalizedRole } from '../../../lib/identity';
 
 interface TeamListRowProps {
   member: any;
@@ -12,9 +13,10 @@ interface TeamListRowProps {
 
 export default function TeamListRow({ member, onEdit, onDelete, onRestore, onViewTasks, isHistorial, isAdminUser }: TeamListRowProps) {
   
-  const displayRole = member.internal_role?.toLowerCase() === 'reviewer' 
-    ? 'Colaborador' 
-    : member.internal_role;
+
+  const displayRole = getNormalizedRole(member.role_id);
+     
+    
 
   return (
     <tr className="hover:bg-gray-50 dark:hover:bg-white/[0.02] transition-colors duration-300 group border-b border-gray-200 dark:border-luxury-border/50 last:border-0">
