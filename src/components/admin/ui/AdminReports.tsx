@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '../../../lib/supabase';
 import { useAuth } from '../../../context/AuthContext';
+import { useSpecialties } from '../../../hooks/useSpecialties';
 import Swal from 'sweetalert2';
 import { toJpeg } from 'html-to-image';
 import { jsPDF } from 'jspdf';
@@ -279,6 +280,7 @@ export const getSpecCount = (map: Record<string, number>, keywords: string[]) =>
 
 export default function AdminReports() {
   const { user, profile } = useAuth();
+  const { specialties } = useSpecialties();
   
   // 🛡️ LÓGICA DE SEGURIDAD
   const roleIdNum = Number(profile?.role_id);
@@ -1334,23 +1336,29 @@ export default function AdminReports() {
               if (nm.includes('audiovisual') || nm.includes('video')) {
                  titleIcon = Video;
                  specificCards = [
-                   { icon: Video, value: reportData.totalVideos, label: 'Videos Entregados', accent: cP },
-                   { icon: Clock, value: reportData.totalGifs, label: 'GIFs Animados', accent: '#0F0F12' }
+                   { icon: Clock, value: reportData.totalRecordingHours, label: 'Horas de Grabación', accent: '#0F0F12' },
+                   { icon: Clock, value: reportData.totalEditingHours, label: 'Horas de Edición', accent: '#0F0F12' },
+                   { icon: MonitorPlay, value: reportData.totalVideoDurationFormatted, label: 'Duración Total', accent: '#0F0F12' },
+                   { icon: Video, value: count, label: 'Total Entregables', accent: cP }
                  ];
               } else if (nm.includes('diseñ') || nm.includes('arte')) {
                  titleIcon = PenTool;
                  if (isBioPappel) {
                    specificCards.push({ icon: Copy, value: reportData.specialtyMap['Contenido y estrategia'] || 0, label: 'Entregables de Texto', accent: cP });
+                   specificCards.push({ icon: LayoutTemplate, value: reportData.totalSlides, label: 'Slides Diseñados', accent: cP });
                  } else {
-                   specificCards.push({ icon: Presentation, value: reportData.totalPpts, label: 'Presentaciones', accent: cP });
+                   specificCards = [
+                     { icon: Presentation, value: reportData.totalPpts, label: 'Presentaciones', accent: '#0F0F12' },
+                     { icon: LayoutTemplate, value: reportData.totalSlides, label: 'Slides', accent: '#0F0F12' },
+                     { icon: PenTool, value: Math.max(0, count - reportData.totalPpts), label: 'Total (Sin Slides)', accent: cP },
+                     { icon: Layers, value: Math.max(0, count - reportData.totalPpts) + reportData.totalSlides, label: 'Total (Con Slides)', accent: cP }
+                   ];
                  }
-                 specificCards.push({ icon: LayoutTemplate, value: reportData.totalSlides, label: 'Slides Diseñados', accent: cP });
-                 specificCards.push({ icon: Sparkles, value: Math.max(0, count - reportData.totalSlides), label: 'Artes / Diseños', accent: '#0F0F12' });
               } else if (nm.includes('programaci') || nm.includes('desarrollo') || nm.includes('web')) {
                  titleIcon = MonitorPlay;
                  specificCards = [
-                   { icon: MonitorPlay, value: count, label: 'Proyectos Codeados', accent: cP },
-                   { icon: Clock, value: reportData.totalEditingHours, label: 'Horas de Desarrollo', accent: '#0F0F12' }
+                   { icon: Layers, value: reportData.specialtyRequestsMap[specName] || 0, label: 'Total Solicitudes', accent: '#0F0F12' },
+                   { icon: MonitorPlay, value: count, label: 'Total Entregables', accent: cP }
                  ];
               } else if (nm.includes('contenid') || nm.includes('estrategia') || nm.includes('copy')) {
                  titleIcon = FileText;
@@ -1364,13 +1372,13 @@ export default function AdminReports() {
               } else if (nm.includes('producci')) {
                  titleIcon = Film;
                  specificCards = [
-                   { icon: Film, value: count, label: 'Llamados / Producciones', accent: cP },
-                   { icon: Clock, value: (reportData as any).totalRecordingHours || 0, label: 'Horas Grabadas', accent: '#0F0F12' }
+                   { icon: Layers, value: reportData.specialtyRequestsMap[specName] || 0, label: 'Total Solicitudes', accent: '#0F0F12' },
+                   { icon: Film, value: count, label: 'Total Entregables', accent: cP }
                  ];
               } else if (nm.includes('staff')) {
                  titleIcon = UserCheck;
                  specificCards = [
-                   { icon: UserCheck, value: count, label: 'Eventos Apoyados', accent: cP }
+                   { icon: UserCheck, value: count, label: 'Total Entregables', accent: cP }
                  ];
               } else if (nm.includes('rp') || nm.includes('relaciones')) {
                  titleIcon = Megaphone;
@@ -1382,7 +1390,7 @@ export default function AdminReports() {
                  // GENERIC FALLBACK FOR NEW SPECIALTIES LIKE MARKETING
                  titleIcon = Layers;
                  specificCards = [
-                   { icon: Layout, value: count, label: 'Solicitudes Totales', accent: cP }
+                   { icon: Layout, value: count, label: 'Total Entregables', accent: cP }
                  ];
               }
 
@@ -1396,7 +1404,6 @@ export default function AdminReports() {
                         {specificCards.map((c, i) => (
                           <MetricCard key={i} icon={c.icon} value={c.value} label={c.label} accent={c.accent} />
                         ))}
-                        <MetricCard icon={Target} value={count} label="Total General" accent="#10B981" />
                       </div>
                     </div>
                   </div>

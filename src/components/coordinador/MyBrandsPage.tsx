@@ -1,4 +1,4 @@
-﻿import { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { 
   Plus, Loader2, ShieldCheck, ArrowLeft, LayoutGrid, List, Search, 
   FileText, Users, Mail, Palette, Sparkles, PackageCheck, 
@@ -190,6 +190,29 @@ export default function MyBrandsPage() {
       console.error("Error cargando solicitudes de la marca:", err);
     } finally {
       setLoadingRequests(false);
+    }
+  };
+
+  const fetchBrandDeliverables = async (orgId: string) => {
+    setLoadingDeliverables(true);
+    try {
+      const { data, error } = await supabase
+        .from('organization_deliverables')
+        .select(`
+          *,
+          request_categories(name),
+          file_extensions:target_format_id(extension)
+        `)
+        .eq('organization_id', orgId)
+        .eq('is_active', true)
+        .order('name');
+
+      if (error) throw error;
+      setBrandDeliverables(data || []);
+    } catch (err) {
+      console.error("Error cargando entregables de la marca:", err);
+    } finally {
+      setLoadingDeliverables(false);
     }
   };
 
